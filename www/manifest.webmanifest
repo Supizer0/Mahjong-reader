@@ -1,0 +1,12 @@
+{
+  "name": "Kawa: riichi discard helper",
+  "short_name": "Kawa",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#E3EBE5",
+  "theme_color": "#1D6A4D",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

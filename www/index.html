@@ -1,0 +1,1082 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kawa: riichi discard helper</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1D6A4D">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@600;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#E3EBE5; --surface:#F6F9F6; --ink:#13241C; --muted:#4D6157; --line:#C2D0C6;
+  --accent:#1D6A4D; --accent-ink:#FFFFFF; --back:#C46F1C;
+  --danger:#B3261E; --warn:#9A6200; --safe:#2E7A3A; --sel:#1D6A4D;
+  --tile:#FFFDF5; --tile-edge:#D8D0BA;
+  color-scheme: light;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0E1A15; --surface:#15251E; --ink:#E2ECE5; --muted:#9BB0A4; --line:#2A3E34;
+    --accent:#5DBE93; --accent-ink:#0E1A15; --back:#B5651A;
+    --danger:#F07167; --warn:#E3AE45; --safe:#71CF8C; --sel:#5DBE93;
+    --tile:#F3EEDE; --tile-edge:#BDB59C;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0E1A15; --surface:#15251E; --ink:#E2ECE5; --muted:#9BB0A4; --line:#2A3E34;
+  --accent:#5DBE93; --accent-ink:#0E1A15; --back:#B5651A;
+  --danger:#F07167; --warn:#E3AE45; --safe:#71CF8C; --sel:#5DBE93;
+  --tile:#F3EEDE; --tile-edge:#BDB59C;
+  color-scheme: dark;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:inherit}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Zen Kaku Gothic New",system-ui,-apple-system,"Segoe UI",sans-serif;font-size:16px;line-height:1.5}
+main{max-width:720px;margin:0 auto;padding:20px 16px 64px}
+h1{font-family:"Shippori Mincho B1","Hiragino Mincho ProN",serif;font-weight:800;font-size:2.4rem;line-height:1;margin:8px 0 4px;display:flex;align-items:baseline;gap:12px}
+h1 .kanji{font-size:3.2rem;color:var(--back)}
+.lede{color:var(--muted);margin:0 0 20px;max-width:60ch}
+h2{font-family:"Shippori Mincho B1",serif;font-size:1.35rem;margin:28px 0 10px;font-weight:800}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px}
+button{font:inherit;color:inherit}
+.btn{background:var(--accent);color:var(--accent-ink);border:0;border-radius:10px;padding:12px 16px;font-weight:700;cursor:pointer;min-height:44px}
+.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.btn:disabled{opacity:.55;cursor:default}
+.btn:focus-visible,.tile:focus-visible,.zone:focus-visible,.seg button:focus-visible{outline:3px solid var(--sel);outline-offset:2px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.status{font-size:.92rem;color:var(--muted);margin-top:10px;white-space:pre-wrap}
+.status.err{color:var(--danger)}
+
+/* tiles */
+.tiles{display:flex;flex-wrap:wrap;gap:3px;align-items:flex-end;min-height:44px}
+.tile{position:relative;width:32px;height:44px;border-radius:5px;background:var(--tile);border:1px solid var(--tile-edge);
+  box-shadow:0 4px 0 var(--back),0 5px 6px rgba(0,0,0,.18);display:inline-flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:0;cursor:pointer;margin-bottom:4px;flex:none;color:#1A1A1A}
+.tile .n{font-family:"Shippori Mincho B1",serif;font-weight:800;font-size:19px;line-height:1}
+.tile .s{font-family:"Shippori Mincho B1",serif;font-size:11px;line-height:1.1;font-weight:600}
+.tile[data-suit="m"] .s{color:#B3261E}
+.tile[data-suit="p"] .s{color:#1F4E8C}
+.tile[data-suit="s"] .s{color:#2D7A39}
+.tile[data-suit="m"] .n,.tile[data-suit="p"] .n,.tile[data-suit="s"] .n{color:#1A1A1A}
+.tile.red .n{color:#D0261B}
+.tile.red::after{content:"";position:absolute;top:3px;right:3px;width:5px;height:5px;border-radius:50%;background:#D0261B}
+.tile .h{font-family:"Shippori Mincho B1",serif;font-weight:800;font-size:21px;line-height:1;color:#1A1A1A}
+.tile .h.g{color:#2D7A39}.tile .h.r{color:#C8231B}
+.tile .haku{width:16px;height:22px;border:2px solid #4A6FA5;border-radius:2px}
+.tile.big{width:44px;height:60px}
+.tile.big .n{font-size:26px}.tile.big .s{font-size:14px}.tile.big .h{font-size:29px}.tile.big .haku{width:22px;height:30px}
+.tile.sm{width:24px;height:33px;box-shadow:0 3px 0 var(--back);margin-bottom:3px;cursor:default}
+.tile.sm .n{font-size:14px}.tile.sm .s{font-size:9px}.tile.sm .h{font-size:16px}.tile.sm .haku{width:12px;height:16px}
+.tile.riichi{transform:rotate(90deg);margin:0 7px 4px}
+.tile.dim{opacity:.45}
+
+.hero{padding:14px 12px 10px;border-radius:14px;background:var(--surface);border:1px solid var(--line)}
+.hero .tiles{gap:2px}
+.hero-note{font-size:.9rem;color:var(--muted);margin-top:6px}
+
+/* zones */
+.zone{display:block;width:100%;text-align:left;background:transparent;border:1px solid var(--line);border-radius:12px;padding:8px 10px;margin-bottom:8px;cursor:pointer}
+.zone.active{border:2px solid var(--sel);padding:7px 9px;background:color-mix(in srgb,var(--sel) 7%,transparent)}
+.zone-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px;font-size:.92rem}
+.zone-head b{font-weight:700}
+.zone-head .meta{color:var(--muted);font-size:.85rem}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:4px 12px;font-size:.85rem;cursor:pointer;min-height:32px}
+.chip.on{background:var(--danger);border-color:var(--danger);color:#fff}
+.empty{color:var(--muted);font-size:.88rem;padding:8px 0}
+
+.palette-wrap{position:sticky;bottom:0;padding-bottom:env(safe-area-inset-bottom,0px);background:var(--bg);margin:0 -16px;padding:10px 16px 12px;border-top:1px solid var(--line);z-index:5}
+.palette-label{font-size:.85rem;color:var(--muted);margin-bottom:6px;display:flex;justify-content:space-between;gap:8px}
+.palette{display:grid;grid-template-columns:repeat(10,1fr);gap:4px;justify-items:center}
+.palette .tile{width:100%;max-width:34px;height:40px}
+.palette .tile .n{font-size:16px}.palette .tile .h{font-size:18px}
+
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.seg button{background:transparent;border:0;padding:8px 12px;cursor:pointer;min-height:40px}
+.seg button.on{background:var(--accent);color:var(--accent-ink);font-weight:700}
+.ctx{display:grid;grid-template-columns:auto 1fr;gap:10px 12px;align-items:center;font-size:.92rem}
+
+/* verdicts */
+.verdicts{display:grid;gap:10px}
+.verdict{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:start;padding:12px;border-radius:14px;background:var(--surface);border:1px solid var(--line)}
+.verdict.primary{border:2px solid var(--accent)}
+.verdict h3{margin:0;font-size:1rem}
+.verdict p{margin:2px 0 0;font-size:.92rem;color:var(--muted)}
+.verdict .why{color:var(--ink);font-size:.92rem;margin-top:4px}
+.verdict ul{margin:6px 0 0;padding-left:18px;font-size:.9rem}
+.verdict .src{font-size:.8rem;color:var(--muted)}
+.banner{padding:10px 12px;border-radius:12px;margin-bottom:10px;font-size:.95rem;border-left:5px solid var(--warn);background:var(--surface)}
+.banner.fold{border-left-color:var(--danger)}
+.banner.push{border-left-color:var(--safe)}
+
+.table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:.9rem;min-width:520px}
+th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+th{font-weight:700;color:var(--muted);font-size:.82rem}
+tr:last-child td{border-bottom:0}
+.pct{font-variant-numeric:tabular-nums;font-weight:700}
+.pct.lo{color:var(--safe)}.pct.mid{color:var(--warn)}.pct.hi{color:var(--danger)}
+.tag{display:inline-block;font-size:.75rem;border:1px solid var(--line);border-radius:6px;padding:1px 6px;margin:2px 4px 2px 0}
+.draws{display:flex;flex-wrap:wrap;gap:2px;margin-top:4px}
+.small{font-size:.85rem;color:var(--muted)}
+details{margin-top:12px}
+summary{cursor:pointer;font-weight:700}
+.hidden{display:none !important}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+.sub{display:flex;align-items:center;gap:8px;margin-top:6px;padding:6px 8px;border-radius:10px;border:1px dashed var(--line);cursor:pointer}
+.sub.active{border:2px solid var(--sel);padding:5px 7px}
+.sub .lbl{font-size:.8rem;color:var(--muted);flex:none;width:44px}
+.speed{display:inline-block;font-size:.75rem;font-weight:700;border-radius:6px;padding:1px 7px;margin-left:6px;border:1px solid var(--line)}
+.speed.S{background:var(--danger);border-color:var(--danger);color:#fff}
+.speed.A{border-color:var(--danger);color:var(--danger)}
+.speed.B{border-color:var(--warn);color:var(--warn)}
+.speed.R{background:var(--danger);border-color:var(--danger);color:#fff}
+.scores{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.scores label{font-size:.78rem;color:var(--muted);display:flex;flex-direction:column;gap:2px}
+.scores input{font:inherit;font-size:.95rem;width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);min-height:40px}
+.ctx .full{grid-column:1/-1}
+.advice{margin-top:6px;font-size:.92rem;color:var(--ink)}
+</style>
+</head>
+<body>
+<main>
+  <h1><span class="kanji">河</span>Kawa</h1>
+  <p class="lede">Photograph a riichi mahjong table, check the tiles, and see your discard options: the most efficient, the safest, a digital pick and an analog read.</p>
+
+  <section aria-labelledby="cap-h">
+    <h2 id="cap-h">Read the table</h2>
+    <div class="panel">
+      <div class="row">
+        <label class="btn" id="photoBtn" tabindex="0" role="button">Take or choose a photo
+          <input id="photo" type="file" accept="image/*" capture="environment" class="hidden">
+        </label>
+        <button class="btn ghost" id="exampleBtn" type="button">Load an example</button>
+        <button class="btn ghost" id="clearBtn" type="button">Clear</button>
+      </div>
+      <div class="status" id="photoStatus">Screenshots from Mahjong Soul or Tenhou read best. You can also tap tiles in by hand below.</div>
+    </div>
+  </section>
+
+  <section aria-labelledby="rules-h">
+    <h2 id="rules-h">Rules and scores</h2>
+    <div class="panel ctx">
+      <span>Red fives</span><div class="seg" id="akaSeg"></div>
+      <span>Scoring</span><div class="seg" id="rulesSeg"></div>
+      <span>Round</span><div class="seg" id="roundSeg"></div>
+      <span>Your seat</span><div class="seg" id="seatSeg"></div>
+      <div class="full hidden" id="connBox">
+        <div class="small" style="margin-bottom:4px">Claude connection: photo reading and the analog read need your own Anthropic API key. It stays on this device.</div>
+        <div class="row">
+          <input id="keyInput" type="password" autocomplete="off" placeholder="sk-ant-…" style="flex:1;min-width:180px;font:inherit;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);min-height:40px">
+          <input id="modelInput" type="text" autocomplete="off" style="width:170px;font:inherit;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);min-height:40px">
+          <button class="btn" id="keySave" type="button">Save</button>
+          <button class="btn ghost" id="keyClear" type="button">Remove key</button>
+        </div>
+        <div class="status" id="keyStatus"></div>
+      </div>
+      <div class="full">
+        <div class="small" style="margin-bottom:4px">Scores (optional, used for placement-aware push/fold)</div>
+        <div class="scores" id="scores"></div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="tab-h">
+    <h2 id="tab-h">Check the tiles</h2>
+    <p class="small" style="margin-top:-4px">Pick a row, then tap the palette to add tiles. Tap a tile in a row to remove it. Each opponent has a row for discards and a row for calls.</p>
+    <div id="zones"></div>
+    <div class="palette-wrap">
+      <div class="palette-label"><span>Adding to <b id="activeName">Your hand</b></span><button class="chip" id="undoBtn" type="button">Remove last</button></div>
+      <div class="palette" id="palette"></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="res-h">
+    <h2 id="res-h">Your options</h2>
+    <div id="results"><div class="panel empty">Add your 14 tiles (13 plus the one you drew) to see options.</div></div>
+  </section>
+
+  <details>
+    <summary>What this is built on</summary>
+    <p class="small">Shanten, draw counts, waits and the next-step lookahead are computed exactly from the tiles you enter. Deal-in percentages come from the turn-by-turn tables in <i>Statistical Mahjong Strategy</i> (Tenhou game logs), adjusted for sotogawa, suji traps, the riichi tile, discarded fives, one-chance and no-chance walls, ankou suji and dora. Expected losses use that book’s average hand values. Push/fold combines its round-balance results with <i>The Modern Mahjong Push-Pull Textbook</i> and Yuusei’s lectures. Opponent speed levels follow Yuusei’s discard speed-reading, and open-hand reads follow <i>Double Your Safe Tiles</i>. The analog read applies principles from all the readable books. The Digital pick was checked against 27 answered problems from the wwyd-chan books: Kawa’s acceptance counts matched the books on every one, and its pick agrees with the authors’ answer on 14 of 27 (the author’s answer is in its top two on 18). The authors pick the widest acceptance only 15 times out of 27, preferring good-shape tenpai, tanyao and dora; the Most efficient card shows the pure-acceptance answer. The SMS tables were built from games with red fives, so with red fives off the deal-in rates are close but hand values run lower. Photos can be misread, so always check the tiles.</p>
+  </details>
+</main>
+
+<script>
+/* ================= tiles ================= */
+const HONOR=["東","南","西","北","白","發","中"], SUITK={m:"萬",p:"筒",s:"索"}, SUITS="mps";
+const WIND_NAMES=["East","South","West","North"];
+const code=t=>t<27?(t%9+1)+SUITS[Math.floor(t/9)]:(t-26)+"z";
+const codeR=x=>x.red?"0"+code(x.t).slice(1):code(x.t);
+function nameOf(t,red){
+  if(t>=27) return ["East","South","West","North","White dragon","Green dragon","Red dragon"][t-27];
+  return (red?"red ":"")+(t%9+1)+" "+["man","pin","sou"][Math.floor(t/9)];
+}
+function parseCode(s){
+  if(typeof s!=="string") return null;
+  const m=s.trim().match(/^([0-9])([mpsz])$/i); if(!m) return null;
+  let n=+m[1],su=m[2].toLowerCase(),red=false;
+  if(su==="z"){ if(n<1||n>7) return null; return {t:26+n,red:false}; }
+  if(n===0){n=5;red=true;}
+  return {t:"mps".indexOf(su)*9+n-1,red};
+}
+function tileEl(t,red,opts={}){
+  const el=document.createElement(opts.tag||"button");
+  if(el.tagName==="BUTTON") el.type="button";
+  el.className="tile"+(opts.size?" "+opts.size:"")+(red?" red":"")+(opts.riichi?" riichi":"");
+  el.setAttribute("aria-label",nameOf(t,red)+(opts.riichi?", riichi declaration":""));
+  if(t<27){const su=SUITS[Math.floor(t/9)];el.dataset.suit=su;el.innerHTML=`<span class="n">${t%9+1}</span><span class="s">${SUITK[su]}</span>`;}
+  else if(t===31) el.innerHTML=`<span class="haku"></span>`;
+  else{const cls=t===32?" g":t===33?" r":"";el.innerHTML=`<span class="h${cls}">${HONOR[t-27]}</span>`;}
+  return el;
+}
+function doraOf(ind){
+  if(ind<27) return Math.floor(ind/9)*9+((ind%9)+1)%9;
+  if(ind<=30) return 27+((ind-27)+1)%4;
+  return 31+((ind-31)+1)%3;
+}
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+/* ================= state ================= */
+const OPPS=[{k:"shimo",label:"Shimocha",where:"right",off:1},{k:"toimen",label:"Toimen",where:"across",off:2},{k:"kami",label:"Kamicha",where:"left",off:3}];
+const ZONES=[
+  {k:"hand",label:"Your hand",hint:"13 tiles plus your draw"},
+  {k:"calls",label:"Your calls",hint:"Tiles in your open melds"},
+  {k:"mydisc",label:"Your discards",hint:"Used for furiten and tile counts"},
+  {k:"dora",label:"Dora indicators",hint:"The flipped tile, not the dora itself"},
+  ...OPPS.map(o=>({k:o.k,label:`${o.label} (${o.where})`,opp:true}))
+];
+function blank(keep){
+  const s={round:0,seat:0,aka:true,rules:"tenhou",scores:["","","",""],active:"hand",z:{}};
+  if(keep){s.aka=keep.aka;s.rules=keep.rules;}
+  ZONES.forEach(z=>s.z[z.k]=z.opp?{tiles:[],calls:[],riichi:-1}:{tiles:[]});
+  return s;
+}
+let state=blank();
+function target(a=state.active){const [k,part]=a.split(".");return part==="calls"?state.z[k].calls:state.z[k].tiles;}
+function activeLabel(){const [k,part]=state.active.split(".");const z=ZONES.find(z=>z.k===k);return z.label+(part==="calls"?": calls":z.opp?": discards":"");}
+
+/* ================= editor ================= */
+const zonesEl=document.getElementById("zones");
+function oppSeat(o){return (state.seat+o.off)%4;}
+function renderZones(){
+  zonesEl.innerHTML="";
+  const speeds=speedLevels();
+  ZONES.forEach(z=>{
+    const data=state.z[z.k];
+    const box=document.createElement("div");
+    const isAct=state.active===z.k;
+    box.className="zone"+(state.active.split(".")[0]===z.k?" active":"");
+    box.tabIndex=0;box.setAttribute("role","button");box.setAttribute("aria-pressed",isAct);
+    box.addEventListener("click",e=>{if(e.target.closest(".tile")||e.target.closest(".chip")||e.target.closest(".sub"))return;setActive(z.k);});
+    box.addEventListener("keydown",e=>{if((e.key==="Enter"||e.key===" ")&&e.target===box){e.preventDefault();setActive(z.k);}});
+    const head=document.createElement("div");head.className="zone-head";
+    let meta=data.tiles.length+" tile"+(data.tiles.length===1?"":"s");
+    if(z.k==="hand") meta=data.tiles.length+" of "+expectedHand();
+    let extra="";
+    if(z.opp){
+      const o=OPPS.find(o=>o.k===z.k); const sp=speeds[z.k];
+      extra=(oppSeat(o)===0?' <span class="meta">dealer</span>':"")+(sp?` <span class="speed ${sp.level}" title="${esc(sp.why)}">${sp.level==="R"?"Riichi":"Speed "+sp.level}</span>`:"");
+    }
+    head.innerHTML=`<span><b>${z.label}</b> <span class="meta">${meta}</span>${extra}</span>`;
+    if(z.opp){
+      const chip=document.createElement("button");chip.type="button";
+      chip.className="chip"+(data.riichi>=0?" on":"");chip.textContent=data.riichi>=0?"In riichi":"Riichi?";
+      chip.title="Marks this player’s latest discard as their riichi tile";
+      chip.addEventListener("click",()=>{
+        if(data.riichi>=0)data.riichi=-1;
+        else if(data.tiles.length)data.riichi=data.tiles.length-1;
+        else{setActive(z.k);flash("Add their discards first, then mark riichi.");return;}
+        changed();
+      });
+      head.appendChild(chip);
+    }
+    box.appendChild(head);
+    const row=document.createElement("div");row.className="tiles";
+    let list=data.tiles.map((x,i)=>({...x,i}));
+    if(!z.opp&&z.k!=="mydisc") list.sort((a,b)=>a.t-b.t||(a.red-b.red));
+    if(!list.length){const e=document.createElement("div");e.className="empty";e.textContent=z.hint||"No discards yet";row.appendChild(e);}
+    list.forEach(x=>{
+      const el=tileEl(x.t,x.red,{riichi:z.opp&&x.i===data.riichi});
+      el.addEventListener("click",()=>{data.tiles.splice(x.i,1);
+        if(z.opp){if(x.i===data.riichi)data.riichi=-1;else if(x.i<data.riichi)data.riichi--;}
+        changed();});
+      row.appendChild(el);
+    });
+    box.appendChild(row);
+    if(z.opp){
+      const sub=document.createElement("div");sub.className="sub"+(state.active===z.k+".calls"?" active":"");
+      sub.tabIndex=0;sub.setAttribute("role","button");
+      sub.innerHTML=`<span class="lbl">Calls</span>`;
+      const cr=document.createElement("div");cr.className="tiles";cr.style.minHeight="36px";
+      if(!data.calls.length){const e=document.createElement("span");e.className="small";e.textContent="Tap here to add their called tiles";cr.appendChild(e);}
+      data.calls.forEach((x,i)=>{const el=tileEl(x.t,x.red,{size:"sm",tag:"button"});el.style.cursor="pointer";
+        el.addEventListener("click",ev=>{ev.stopPropagation();data.calls.splice(i,1);changed();});cr.appendChild(el);});
+      sub.appendChild(cr);
+      sub.addEventListener("click",e=>{if(e.target.closest(".tile"))return;setActive(z.k+".calls");});
+      sub.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();setActive(z.k+".calls");}});
+      box.appendChild(sub);
+    }
+    zonesEl.appendChild(box);
+  });
+  document.getElementById("activeName").textContent=activeLabel();
+}
+function setActive(k){state.active=k;renderZones();}
+function flash(msg){const s=document.getElementById("photoStatus");s.textContent=msg;s.classList.remove("err");}
+function renderPalette(){
+  const p=document.getElementById("palette");p.innerHTML="";
+  p.style.gridTemplateColumns=`repeat(${state.aka?10:9},1fr)`;
+  const add=(t,red)=>{const el=tileEl(t,red);el.addEventListener("click",()=>addTile(t,red));p.appendChild(el);};
+  for(let s=0;s<3;s++){for(let n=0;n<9;n++)add(s*9+n,false);if(state.aka)add(s*9+4,true);}
+  for(let h=27;h<34;h++)add(h,false);
+}
+function allTiles(){const a=[];Object.values(state.z).forEach(z=>{a.push(...z.tiles);if(z.calls)a.push(...z.calls);});return a;}
+function addTile(t,red){
+  const all=allTiles();
+  if(all.filter(x=>x.t===t).length>=4){flash("All four "+nameOf(t)+" tiles are already placed.");return;}
+  if(red&&all.some(x=>x.t===t&&x.red)){flash("There is only one red "+nameOf(t,false)+".");return;}
+  target().push({t,red});changed();
+}
+document.getElementById("undoBtn").addEventListener("click",()=>{
+  const arr=target();if(!arr.length)return;
+  const [k,part]=state.active.split(".");const d=state.z[k];
+  if(!part&&d.riichi!==undefined&&d.riichi===arr.length-1)d.riichi=-1;
+  arr.pop();changed();
+});
+function seg(id,labels,get,set){
+  const el=document.getElementById(id);el.innerHTML="";
+  labels.forEach((l,i)=>{const b=document.createElement("button");b.type="button";b.textContent=l;
+    b.className=get()===i?"on":"";b.setAttribute("aria-pressed",get()===i);
+    b.addEventListener("click",()=>{set(i);changed(true);});el.appendChild(b);});
+}
+function renderSettings(){
+  seg("akaSeg",["3 red fives","None"],()=>state.aka?0:1,i=>{state.aka=i===0;if(!state.aka)Object.values(state.z).forEach(z=>{z.tiles.forEach(x=>x.red=false);(z.calls||[]).forEach(x=>x.red=false);});renderPalette();});
+  seg("rulesSeg",["Avoid 4th (Tenhou)","Uma, top matters"],()=>state.rules==="tenhou"?0:1,i=>state.rules=i===0?"tenhou":"uma");
+  seg("roundSeg",["East","South"],()=>state.round,i=>state.round=i);
+  seg("seatSeg",["East","South","West","North"],()=>state.seat,i=>state.seat=i);
+  const sc=document.getElementById("scores");
+  if(!sc.children.length){
+    ["You","Shimocha","Toimen","Kamicha"].forEach((l,i)=>{
+      const lab=document.createElement("label");lab.textContent=l;
+      const inp=document.createElement("input");inp.type="number";inp.inputMode="numeric";inp.step="100";inp.placeholder="25000";
+      inp.addEventListener("input",()=>{state.scores[i]=inp.value;clearTimeout(timer);timer=setTimeout(analyze,300);});
+      lab.appendChild(inp);sc.appendChild(lab);
+    });
+  }
+  [...sc.querySelectorAll("input")].forEach((inp,i)=>{if(inp.value!==String(state.scores[i]??""))inp.value=state.scores[i]??"";});
+}
+let timer=null;
+function changed(){renderZones();renderSettings();clearTimeout(timer);timer=setTimeout(analyze,60);}
+
+/* ================= engine: shanten ================= */
+const memo=new Map();
+function stdShanten(c,melds){
+  const need=4-melds;let best=8;const h=c.slice();
+  function dfs(i,sets,part,pair){
+    while(i<34&&h[i]===0)i++;
+    if(i===34){const p=Math.min(part,need-sets);const s=8-2*(sets+melds)-p-pair;if(s<best)best=s;return;}
+    const num=i<27,r=i%9;
+    if(h[i]>=3){h[i]-=3;dfs(i,sets+1,part,pair);h[i]+=3;}
+    if(num&&r<=6&&h[i+1]&&h[i+2]){h[i]--;h[i+1]--;h[i+2]--;dfs(i,sets+1,part,pair);h[i]++;h[i+1]++;h[i+2]++;}
+    if(h[i]>=2){h[i]-=2;if(!pair)dfs(i,sets,part,1);dfs(i,sets,part+1,pair);h[i]+=2;}
+    if(num&&r<=7&&h[i+1]){h[i]--;h[i+1]--;dfs(i,sets,part+1,pair);h[i]++;h[i+1]++;}
+    if(num&&r<=6&&h[i+2]){h[i]--;h[i+2]--;dfs(i,sets,part+1,pair);h[i]++;h[i+2]++;}
+    h[i]--;dfs(i,sets,part,pair);h[i]++;
+  }
+  dfs(0,0,0,0);return best;
+}
+const TERMS=[0,8,9,17,18,26,27,28,29,30,31,32,33];
+function shanten(c,melds){
+  const key=melds+":"+c.join("");
+  const hit=memo.get(key);if(hit!==undefined)return hit;
+  let s=stdShanten(c,melds);
+  if(melds===0){
+    let pairs=0,kinds=0;for(let i=0;i<34;i++){if(c[i]>=2)pairs++;if(c[i]>=1)kinds++;}
+    s=Math.min(s,6-pairs+Math.max(0,7-kinds));
+    let k=0,hp=0;TERMS.forEach(i=>{if(c[i])k++;if(c[i]>=2)hp=1;});s=Math.min(s,13-k-hp);
+  }
+  if(memo.size>300000)memo.clear();
+  memo.set(key,s);return s;
+}
+function chiitoiOnly(c,melds){ if(melds) return false; return stdShanten(c,melds)>shanten(c,melds); }
+function ukeire(c,melds,outside){
+  const base=shanten(c,melds);const tiles=[];let total=0;
+  for(let t=0;t<34;t++){
+    if(c[t]>=4)continue;
+    c[t]++;const s=shanten(c,melds);c[t]--;
+    if(s<base){const rem=Math.max(0,4-outside[t]-c[t]);tiles.push({t,rem});total+=rem;}
+  }
+  return {base,tiles,total};
+}
+// lookahead: after each useful draw, best follow-up discard
+function nextStep(c,melds,outside,draws,base){
+  let tot=0,w=0,good=0;
+  for(const d of draws){
+    if(d.rem<=0)continue;
+    c[d.t]++;let best=0,bestGood=false;
+    for(let x=0;x<34;x++){
+      if(!c[x])continue;c[x]--;
+      if(shanten(c,melds)===base-1){
+        const u=ukeire(c,melds,outside);
+        const g=base-1===0?(u.tiles.length>=2&&u.total>=4)||(u.tiles.length===1&&u.tiles[0].t>=27&&u.total>=2):false;
+        if(u.total>best||(u.total===best&&g)){best=u.total;bestGood=g;}
+      }
+      c[x]++;
+    }
+    c[d.t]--;tot+=d.rem*best;w+=d.rem;if(bestGood)good+=d.rem;
+  }
+  return w?{avg:tot/w,good:base===1?good/w:null}:{avg:0,good:null};
+}
+
+/* ================= safety (Statistical Mahjong Strategy tables) ================= */
+// columns: ns5 ns46 ns37 ns28 ns19 hs5 hs46A hs46B s37 s28 s19 fs5 fs46
+const NUM={2:[6.6,6.9,6.3,5.2,4.0,3.5,3.5,4.1,5.3,3.5,1.9,0.8,2.6],3:[7.7,8.0,6.7,5.8,4.6,4.3,4.1,4.9,5.2,3.6,1.8,1.6,2.0],4:[8.5,8.9,7.1,6.2,5.1,4.8,4.7,5.6,5.2,3.8,1.7,1.6,2.0],5:[9.4,9.7,7.5,6.7,5.5,5.3,5.1,6.0,5.3,3.7,1.7,1.7,2.0],6:[10.2,10.5,7.9,7.1,5.9,5.8,5.6,6.4,5.2,3.7,1.7,1.8,2.0],7:[11.0,11.3,8.4,7.5,6.3,6.3,6.1,6.8,5.3,3.7,1.7,2.0,2.1],8:[11.9,12.2,8.9,8.0,6.8,6.9,6.6,7.4,5.3,3.8,1.7,2.1,2.2],9:[12.8,13.1,9.5,8.6,7.4,7.4,7.2,7.9,5.5,3.9,1.8,2.2,2.3],10:[13.8,14.1,10.1,9.2,8.0,8.0,7.8,8.5,5.6,4.0,1.9,2.4,2.4],11:[14.9,15.1,10.8,9.9,8.7,8.7,8.5,9.2,5.7,4.2,2.0,2.5,2.6],12:[16.0,16.3,11.6,10.6,9.4,9.4,9.2,9.9,6.0,4.4,2.2,2.7,2.7],13:[17.2,17.5,12.4,11.4,10.2,10.2,10.0,10.6,6.2,4.6,2.4,3.0,3.0],14:[18.5,18.8,13.3,12.3,11.1,11.0,10.9,11.4,6.6,4.9,2.7,3.2,3.1],15:[19.9,20.1,14.3,13.3,12.0,11.9,11.8,12.3,7.0,5.3,3.0,3.4,3.4],16:[21.3,21.7,15.4,14.3,13.1,12.9,12.8,13.3,7.4,5.7,3.3,3.7,3.6],17:[22.9,23.2,16.6,15.4,14.2,14.0,13.8,14.4,8.0,6.1,3.6,3.9,3.9],18:[24.7,24.9,17.9,16.7,15.4,15.2,15.0,15.6,8.5,6.6,4.0,4.3,4.2],19:[27.5,27.8,20.4,19.1,17.8,17.5,17.5,17.5,9.8,7.4,5.0,5.1,5.1]};
+const COL={ns5:0,ns46:1,ns37:2,ns28:3,ns19:4,hs5:5,hs46A:6,hs46B:7,s37:8,s28:9,s19:10,fs5:11,fs46:12};
+// columns: yakuhai live/1/2 visible, guest live/1/2 visible
+const HON={1:[2.1,1.2,0.5,2.4,1.4,1.2],2:[2.3,1.2,0.5,2.7,1.3,0.4],3:[2.4,1.2,0.3,2.6,1.2,0.3],4:[2.6,1.1,0.2,2.6,1.2,0.2],5:[2.9,1.2,0.2,2.8,1.2,0.2],6:[3.2,1.3,0.2,2.9,1.3,0.2],7:[3.6,1.4,0.2,3.2,1.4,0.2],8:[4.0,1.6,0.2,3.5,1.6,0.2],9:[4.6,1.9,0.3,4.0,1.8,0.2],10:[5.3,2.2,0.3,4.6,2.1,0.3],11:[6.0,2.6,0.4,5.1,2.5,0.3],12:[6.8,3.1,0.4,5.9,3.0,0.4],13:[7.8,3.7,0.5,6.6,3.7,0.5],14:[8.8,4.4,0.7,7.4,4.4,0.6],15:[9.9,5.2,0.8,8.4,5.3,0.8],16:[11.2,6.2,1.0,9.4,6.5,0.9],17:[12.4,7.3,1.3,10.5,7.7,1.2],18:[13.9,8.5,1.7,11.8,9.4,1.6],19:[18.1,12.1,2.8,14.7,12.6,2.1]};
+const CAT_NAME={ns5:"Non-suji 5",ns46:"Non-suji 4/6",ns37:"Non-suji 3/7",ns28:"Non-suji 2/8",ns19:"Non-suji terminal",hs5:"Half-suji 5",hs46A:"Half-suji 4/6",hs46B:"Half-suji 4/6",s37:"Suji 3/7",s28:"Suji 2/8",s19:"Suji terminal",fs5:"Double suji 5",fs46:"Double suji 4/6"};
+
+function oppData(o,ctx){
+  const d=state.z[o.k];
+  const set=new Set(d.tiles.map(x=>x.t));
+  const pre=d.riichi>=0?d.tiles.slice(0,d.riichi):d.tiles;
+  const rt=d.riichi>=0?d.tiles[d.riichi]:null;
+  const seat=oppSeat(o);
+  return {...o,tiles:d.tiles,calls:d.calls,set,pre,riichiTile:rt?rt.t:null,riichiRed:rt?rt.red:false,riichi:d.riichi>=0,seat,dealer:seat===0,
+    yakuhai:t=>t>=31||t===27+state.round||t===27+seat};
+}
+function dangerVs(t,o,ctx){
+  const {seen,T,doraSet,myC}=ctx;
+  if(o.set.has(t)) return {p:0,why:"Genbutsu"};
+  if(t>=27){
+    const s=seen[t];
+    if(s>=4) return {p:0,why:"All four visible"};
+    if(s===3) return {p:0.05,why:"Three visible"};
+    const row=HON[Math.min(19,Math.max(1,T))];const y=o.yakuhai(t);
+    let p=row[(y?0:3)+Math.min(2,s)];let why=(s===0?"Live ":s===1?"Once-seen ":"Twice-seen ")+(y?"yakuhai":"guest wind");
+    if(doraSet.has(t)){p*=s===0?1.15:1.5;why+=", dora";}
+    return {p:+p.toFixed(1),why};
+  }
+  const n=t%9+1, row=NUM[Math.min(19,Math.max(2,T))];
+  const lowOk=n<4||o.set.has(t-3), highOk=n>6||o.set.has(t+3);
+  const mid=n>=4&&n<=6;
+  let cat;
+  if(lowOk&&highOk) cat=n===1||n===9?"s19":n===2||n===8?"s28":n===3||n===7?"s37":n===5?"fs5":"fs46";
+  else if(mid&&(lowOk||highOk)){
+    if(n===5)cat="hs5";
+    else{const byTerm=(n===4&&lowOk)||(n===6&&highOk);cat=byTerm?"hs46A":"hs46B";}
+  }else cat=n===5?"ns5":mid?"ns46":n===3||n===7?"ns37":n===2||n===8?"ns28":"ns19";
+  let p=row[COL[cat]],why=CAT_NAME[cat];
+  const isNS=cat.startsWith("ns"),isS=cat.startsWith("s"),isHS=cat.startsWith("hs");
+  const suitBase=t-(n-1);
+  // suji trap: the covering genbutsu is the riichi tile itself
+  if(o.riichiTile!==null&&(isS||cat.startsWith("fs"))){
+    const cover=[];if(n>=4)cover.push(t-3);if(n<=6)cover.push(t+3);
+    if(cover.includes(o.riichiTile)){
+      if(cat==="s37"){p=row[COL.ns37]*0.88;why="Suji of the riichi tile (suji trap 3/7)";}
+      else if(cat==="s28"){p=row[COL.ns28]*0.72;why="Suji of the riichi tile (suji trap 2/8)";}
+      else if(cat.startsWith("fs")){p*=1.35;why+=", suji trap";}
+    }
+  }
+  // sotogawa: outside a pre-riichi discard
+  if(isNS&&!mid){
+    const inside=n<5?[...Array(5-n).keys()].map(i=>suitBase+n+i):[...Array(n-5).keys()].map(i=>suitBase+4+i);
+    if(o.pre.some(x=>inside.includes(x.t))){p*=0.42;why+=", outside an earlier discard (sotogawa)";}
+  }
+  // discarded 5 in the same suit before riichi
+  const five=o.pre.find(x=>x.t===suitBase+4);
+  if(five){
+    const red=five.red&&state.aka;
+    if(cat==="ns37"){p*=red?0.33:0.58;why+=", 5 of this suit cut early";}
+    else if(cat==="ns19"){p*=red?1.5:1.4;why+=", 5 of this suit cut early";}
+    else if(cat==="hs46A"){p*=red?0.1:0.4;why+=", 5 of this suit cut early";}
+  }
+  // riichi tile adjacency (1 riichi waiting on 2, 2 riichi waiting on 1)
+  if(o.riichiTile!==null&&o.riichiTile<27&&Math.floor(o.riichiTile/9)===Math.floor(t/9)){
+    const rn=o.riichiTile%9+1;
+    if((rn===1&&n===2)||(rn===9&&n===8)){p*=isNS?1.22:isS?1.85:1;why+=", next to a terminal riichi tile";}
+    if((rn===2&&n===1)||(rn===8&&n===9)){p*=isNS?1.3:isS?3:1;why+=", next to a 2/8 riichi tile";}
+  }
+  if(o.riichiTile!==null&&o.riichiTile>=27&&(cat==="s28"||cat==="s37")){p=Math.max(0.8,p-1);why+=", riichi declared with an honor";}
+  // walls: one-chance / no-chance on the uncovered ryanmen sides
+  if(!(lowOk&&highOk)){
+    const sides=[];
+    if(!lowOk&&n>=4)sides.push([t-1,t-2]);
+    if(!highOk&&n<=6)sides.push([t+1,t+2]);
+    const state3=sides.map(s=>Math.max(seen[s[0]],seen[s[1]]));
+    if(sides.length&&state3.every(v=>v>=4)){
+      const sc=n===1||n===9?"s19":n===2||n===8?"s28":n===3||n===7?"s37":n===5?"fs5":"fs46";
+      if(row[COL[sc]]<p){p=row[COL[sc]];why+=", no-chance (wall)";}
+    }else if(sides.length&&state3.every(v=>v>=3)){p*=isHS?0.6:0.75;why+=", one-chance";}
+    // ankou suji: you hold three of the tile that would have made it suji
+    const anchors=[];if(!lowOk&&n>=4)anchors.push(t-3);if(!highOk&&n<=6)anchors.push(t+3);
+    if(isNS&&anchors.some(a=>myC[a]>=3)){p+=1.7;why+=", ankou suji";}
+  }
+  if(isS&&seen[t]>=3){p=cat==="s19"?0.3:cat==="s28"?p*0.65:p*0.9;why+=", three copies visible";}
+  if(doraSet.has(t)){p*=isNS?1.17:isHS?1.25:isS?1.4:1.8;why+=", dora";}
+  return {p:+p.toFixed(1),why};
+}
+// open hands: infer their yaku from calls (Double Your Safe Tiles)
+function openRead(o){
+  const calls=o.calls; if(!calls.length) return null;
+  const nums=calls.filter(x=>x.t<27), hon=calls.filter(x=>x.t>=27);
+  const suits=new Set(nums.map(x=>Math.floor(x.t/9)));
+  const tanyao=!hon.length&&nums.every(x=>{const n=x.t%9+1;return n>=2&&n<=8;});
+  const discNums=o.tiles.filter(x=>x.t<27);
+  let flushSuit=null;
+  if(suits.size===1){const s=[...suits][0];const inSuit=discNums.filter(x=>Math.floor(x.t/9)===s).length;if(discNums.length>=3&&inSuit<=1)flushSuit=s;}
+  const counts={};calls.forEach(x=>counts[x.t]=(counts[x.t]||0)+1);
+  const pons=Object.values(counts).filter(v=>v>=3).length, groups=Math.floor(calls.length/3);
+  const toitoi=groups>=2&&pons===groups;
+  const yakuPon=Object.entries(counts).some(([t,v])=>v>=3&&o.yakuhai(+t));
+  return {tanyao,flushSuit,toitoi,yakuPon,groups};
+}
+function openAdjust(t,o,base,read){
+  if(!read) return base;
+  if(read.tanyao&&(t>=27||t%9===0||t%9===8)) return {p:0.4,why:"Tanyao calls: terminals and honors can’t win it"};
+  if(read.flushSuit!==null&&t<27&&Math.floor(t/9)!==read.flushSuit) return {p:0.5,why:"Off-suit against a likely flush"};
+  if(read.flushSuit!==null) return {p:+(base.p*1.3).toFixed(1),why:base.why+", in their flush"};
+  return {p:+(base.p*0.85).toFixed(1),why:base.why+" (open hand estimate)"};
+}
+function lossIfDealIn(o,read,t,doraSet){
+  let v;
+  if(o.riichi) v=o.dealer?7500:5300;
+  else if(read&&read.flushSuit!==null) v=o.dealer?9600:6600;
+  else if(read&&read.toitoi) v=o.dealer?10500:7300;
+  else if(read&&read.tanyao) v=o.dealer?4700:3200;
+  else v=o.dealer?4500:2800;
+  if(!o.riichi){const dc=o.calls.filter(x=>doraSet.has(x.t)||(x.red&&state.aka)).length;v*=1+0.4*Math.min(3,dc);}
+  if(doraSet.has(t)) v*=1.4;
+  else if(t>=27&&o.yakuhai(t)&&o.riichi) v*=1.2;
+  return Math.round(v);
+}
+
+/* ================= opponent speed (Yuusei lectures) ================= */
+function speedLevels(){
+  const out={}; const doraSet=new Set(state.z.dora.tiles.map(x=>doraOf(x.t)));
+  OPPS.forEach(o=>{
+    const d=state.z[o.k];
+    if(d.riichi>=0){out[o.k]={level:"R",why:"In riichi: tenpai"};return;}
+    const groups=Math.floor(d.calls.length/3);
+    const doraCall=d.calls.some(x=>doraSet.has(x.t));
+    if(groups>=2||(groups>=1&&doraCall&&d.tiles.length>=8)){out[o.k]={level:"S",why:groups>=2?"Two or more calls: assume tenpai":"Dora call, midgame: assume close to tenpai"};return;}
+    if(!d.tiles.length){out[o.k]=null;return;}
+    const mid=d.tiles.filter(x=>x.t<27&&x.t%9>=2&&x.t%9<=6).length;
+    let level=mid>=2?"A":mid===1?"B":"C";
+    let why=mid+" discard"+(mid===1?"":"s")+" from 3–7";
+    for(let i=1;i<d.tiles.length;i++){const a=d.tiles[i-1].t,b=d.tiles[i].t;
+      if(a<27&&b<27&&Math.floor(a/9)===Math.floor(b/9)&&Math.abs(a-b)===1&&a%9>0&&b%9>0&&a%9<8&&b%9<8){level="A";why="Cut a ryanmen";break;}}
+    if(d.tiles.some(x=>x.t<27&&doraSet.has(x.t)&&x.t%9>=1&&x.t%9<=7)){level="A";why="Cut a 2–8 dora";}
+    const nums=d.tiles.filter(x=>x.t<27);
+    if(nums.length>=5){
+      for(let s=0;s<3;s++){
+        if(!nums.some(x=>Math.floor(x.t/9)===s)){
+          const hon=d.tiles.slice(-3).some(x=>x.t>=27);
+          level=groups>=1?"S":hon?"A":"B";why="No "+["man","pin","sou"][s]+" discarded: possible flush";break;}
+      }
+    }
+    if(groups===1&&(level==="C"||level==="B")){level="A";why="One call";}
+    out[o.k]={level,why};
+  });
+  return out;
+}
+
+/* ================= hand value estimate ================= */
+function estValue(c,melds,ctx){
+  const {doraSet}=ctx; const calls=state.z.calls.tiles;
+  let dora=0;for(let t=0;t<34;t++)if(doraSet.has(t))dora+=c[t]*[...ctx.doras].filter(d=>d===t).length;
+  calls.forEach(x=>{dora+=ctx.doras.filter(d=>d===x.t).length;});
+  let aka=0;if(state.aka){aka+=state.z.hand.tiles.filter(x=>x.red).length-(ctx.discardRed?1:0);aka+=calls.filter(x=>x.red).length;}
+  const callC=Array(34).fill(0);calls.forEach(x=>callC[x.t]++);
+  let yaku=0,notes=[];
+  const yak=t=>(t>=31?1:0)+(t===27+state.round?1:0)+(t===27+state.seat?1:0);
+  for(let t=27;t<34;t++){if(c[t]+callC[t]>=3&&yak(t)){yaku+=yak(t);notes.push("yakuhai");}}
+  let tanyao=true;for(let t=0;t<34;t++){if((c[t]||callC[t])&&(t>=27||t%9===0||t%9===8)){tanyao=false;break;}}
+  if(tanyao){yaku+=1;notes.push("tanyao");}
+  const closed=melds===0;
+  let flush=null;{const suits=new Set();let hon=0;for(let t=0;t<34;t++)if(c[t]+callC[t]){if(t>=27)hon++;else suits.add(Math.floor(t/9));}
+    if(suits.size===1){yaku+=hon?(closed?3:2):(closed?6:5);notes.push(hon?"honitsu":"chinitsu");flush=true;}}
+  const pairYakuhai=[...Array(7).keys()].some(i=>c[27+i]===2&&yak(27+i));
+  return {dora,aka,yaku,closed,han:yaku+dora+aka,notes,pairYakuhai};
+}
+
+/* ================= analysis ================= */
+function myMelds(){return Math.floor(state.z.calls.tiles.length/3);}
+function expectedHand(){return 14-3*myMelds();}
+let lastAnalysis=null, gen=0;
+
+function analyze(){
+  const myGen=++gen;
+  const res=document.getElementById("results");
+  const hand=state.z.hand.tiles, melds=myMelds(), exp=expectedHand();
+  if(hand.length!==exp&&hand.length!==exp-1){
+    lastAnalysis=null;
+    res.innerHTML=`<div class="panel empty">Your hand has ${hand.length} tile${hand.length===1?"":"s"}. Add ${exp} tiles (your hand plus the tile you just drew) to see discard options.</div>`;
+    return;
+  }
+  const c=Array(34).fill(0);hand.forEach(x=>c[x.t]++);
+  const outside=Array(34).fill(0);
+  ["calls","mydisc","dora"].forEach(k=>state.z[k].tiles.forEach(x=>outside[x.t]++));
+  OPPS.forEach(o=>{state.z[o.k].tiles.forEach(x=>outside[x.t]++);state.z[o.k].calls.forEach(x=>outside[x.t]++);});
+  const seen=outside.map((v,i)=>v+c[i]);
+  const doras=state.z.dora.tiles.map(x=>doraOf(x.t)); const doraSet=new Set(doras);
+  const dealer=state.seat===0;
+  const speeds=speedLevels();
+  const opps=OPPS.map(o=>oppData(o));
+  const turn=Math.max(state.z.mydisc.tiles.length,...opps.map(o=>o.tiles.length))+1;
+  const T=Math.max(2,Math.min(19,turn-1||2));
+  const ctx={seen,T,doraSet,doras,myC:c};
+  const threats=opps.filter(o=>o.riichi||(speeds[o.k]&&speeds[o.k].level==="S"));
+  threats.forEach(o=>{o.read=openRead(o);o.w=o.riichi?1:0.7;});
+  const myDiscSet=new Set(state.z.mydisc.tiles.map(x=>x.t));
+
+  if(hand.length===exp-1){
+    const u=ukeire(c,melds,outside);lastAnalysis=null;
+    res.innerHTML="";
+    const v=document.createElement("div");v.className="verdict primary";
+    v.innerHTML=`<div></div><div><h3>${u.base===0?"You are tenpai":u.base<0?"This is a complete hand":"You are "+u.base+"-shanten"}</h3>
+      <p>${u.base===0?"Waiting on":"Tiles that improve the hand"}: ${u.total} left across ${u.tiles.length} kind${u.tiles.length===1?"":"s"}.${u.base===0&&u.tiles.some(x=>myDiscSet.has(x.t))?" You are furiten: you can only win by tsumo.":""}</p><div class="draws"></div>
+      <p class="why">Add the tile you drew to compare discards.</p></div>`;
+    const dr=v.querySelector(".draws");u.tiles.forEach(x=>{const e=tileEl(x.t,false,{tag:"span",size:"sm"});e.title=x.rem+" left";dr.appendChild(e);});
+    res.appendChild(v);return;
+  }
+
+  const opts=[];
+  const yakuhaiMe=t=>t>=31||t===27+state.round||t===27+state.seat;
+  [...new Set(hand.map(x=>x.t))].forEach(t=>{
+    const hasNormal=hand.some(x=>x.t===t&&!x.red); const red=!hasNormal;
+    c[t]--;
+    const u=ukeire(c,melds,outside);
+    const val=estValue(c,melds,{...ctx,discardRed:red});
+    c[t]++;
+    const pList=threats.map(o=>{let d=dangerVs(t,o,ctx);if(!o.riichi)d=openAdjust(t,o,d,o.read);return {o,...d,loss:lossIfDealIn(o,o.read,t,doraSet)};});
+    const pDeal=pList.length?1-pList.reduce((a,x)=>a*(1-x.p*x.o.w/100),1):0;
+    const EL=pList.reduce((a,x)=>a+x.p/100*x.o.w*x.loss,0);
+    let general=null;
+    if(!threats.length){const g=opps.map(o=>dangerVs(t,o,ctx));general=g.reduce((a,x)=>a+x.p,0)/3;}
+    const isolated=c[t]===1&&(t>=27||[-2,-1,1,2].every(d=>{const n=t%9+d;return n<0||n>8||c[t+d]===0;}));
+    let floatClass=null;
+    if(isolated){if(t>=27)floatClass=yakuhaiMe(t)?"yakuhai":"guest wind";else{const n=t%9+1;floatClass=(n===1||n===9)?"1/9":(n===2||n===8)?"2/8":"3–7";}}
+    const floatBonus={"guest wind":0.6,"yakuhai":0.5,"1/9":0.4,"2/8":0.2,"3–7":0}[floatClass]??0;
+    const furiten=u.base===0&&u.tiles.some(x=>myDiscSet.has(x.t)||x.t===t);
+    // value features fitted against the wwyd books: tanyao direction, dora/red kept, acceptance near dora
+    c[t]--;let ns=0,dk=0;for(let x=0;x<34;x++){if(c[x]&&!(x<27&&x%9>0&&x%9<8))ns+=c[x];if(c[x]&&doraSet.has(x))dk+=c[x]*doras.filter(d=>d===x).length;}c[t]++;
+    if(state.aka)dk+=hand.filter(x=>x.red).length-(red?1:0);
+    const dacc=u.tiles.filter(x=>doras.some(d=>x.t===d||(x.t<27&&d<27&&Math.floor(x.t/9)===Math.floor(d/9)&&Math.abs(x.t-d)<=2))).reduce((a,x)=>a+x.rem,0);
+    const goodWait=u.base===0&&((u.tiles.length>=2&&u.total>=4)||(u.tiles.length===1&&u.tiles[0].t>=27&&u.total>=2));
+    opts.push({t,red,shanten:u.base,ukeire:u.total,draws:u.tiles,pList,pDeal:pDeal*100,EL,general,val,
+      isDora:doraSet.has(t),isYakuhaiPair:yakuhaiMe(t)&&c[t]>=2,floatClass,floatBonus,furiten,goodWait,next:null,ns,dk,dacc,
+      chiitoi:chiitoiOnly((()=>{const cc=c.slice();cc[t]--;return cc;})(),melds)});
+  });
+  const minSh=Math.min(...opts.map(o=>o.shanten));
+  const A={opts,threats,turn,T,dealer,minSh,doras,opps,speeds,melds,c,outside,ctx};
+  lastAnalysis=A;
+  pick(A);
+  renderResults(true);
+  // lookahead on the strongest candidates, without blocking the page
+  if(minSh>=1&&minSh<=3){
+    const cand=opts.filter(o=>o.shanten===minSh).sort((a,b)=>b.ukeire-a.ukeire).slice(0,6);
+    let i=0;
+    const step=()=>{
+      if(myGen!==gen)return;
+      if(i>=cand.length){pick(A);renderResults(false);return;}
+      const o=cand[i++];const cc=c.slice();cc[o.t]--;
+      o.next=nextStep(cc,melds,outside,o.draws,o.shanten);
+      setTimeout(step,0);
+    };
+    setTimeout(step,20);
+  }
+}
+
+function rankInfo(){
+  const s=state.scores.map(v=>v===""||v==null?null:+v);
+  if(s.some(v=>v===null||isNaN(v)))return null;
+  const me=s[0];const rank=1+s.slice(1).filter(v=>v>me).length;
+  const sorted=[...s].sort((a,b)=>b-a);
+  return {rank,me,lead:rank===1?me-sorted[1]:null,behind:rank>1?sorted[0]-me:null,south:state.round===1};
+}
+
+function pushFold(A){
+  const {threats,turn,dealer}=A;
+  if(!threats.length) return {stance:"attack",why:""};
+  const riichis=threats.filter(o=>o.riichi);
+  const vsDealer=threats.some(o=>o.dealer);
+  const n=threats.length;
+  const best=A.opts.filter(o=>o.shanten===A.minSh).sort((a,b)=>b.ukeire-a.ukeire)[0];
+  const v=best.val; const han=v.han+(v.closed?1:0);
+  const R=rankInfo();
+  let bar=0,note="";
+  if(R&&R.south){
+    if(R.rank===1&&R.lead>=8000){bar=1;note=" You lead by "+R.lead+" in the South round, so the bar is higher (Push-Pull ch. 3).";}
+    if(R.rank===4&&state.rules==="tenhou"){bar=-1;note=" In 4th on Tenhou rules, you need points, so the bar is lower.";}
+  }
+  const sms="Statistical Mahjong Strategy";
+  if(A.minSh<=0){
+    if(best.goodWait){
+      if(n>=2&&bar>0) return {stance:"fold",why:`Good-wait tenpai against two threats while protecting a lead. Fold.${note}`};
+      return {stance:"push",why:n>=2?`Good-wait tenpai against two threats: push. The ${sms} data gives this a fairly high win rate.${note}`:
+        `Good-wait tenpai: push${riichis.length&&best.val.closed?" and chase riichi":""}. Chasing with a ryanmen beats folding even for riichi-only (${sms} 2.2).${note}`};
+    }
+    const need=(n>=2?4:vsDealer?3:2)+bar;
+    if(han>=need) return {stance:"push",why:`Bad-wait tenpai worth about ${han} han${v.closed?" with riichi":""}. ${n>=2?"Against two threats you need about 4 han":vsDealer?"Against the dealer you need about 3 han":"2 han is barely worth pushing, 3 is clearly worth it"} (${sms} 2.3, 2.7).${note}`};
+    return {stance:"fold",why:`Bad-wait tenpai worth about ${han} han is below the bar of ${need} han here. Fold (${sms} 2.3, 2.7).${note}`};
+  }
+  if(A.minSh===1){
+    if(n>=2) return {stance:"fold",why:"1-shanten against two threats: fold completely (Push-Pull, problem 058)."};
+    const good=best.ukeire>=16&&!best.chiitoi;
+    if(best.chiitoi) return {stance:"fold",why:"Chiitoi 1-shanten can’t fight a riichi; fold until you reach tenpai (Push-Pull ch. 2)."};
+    if(good&&han>=3+bar&&turn<=10) return {stance:"careful",why:`Good 1-shanten with about ${han} han, early: hold on, but only push a tile if one dangerous discard gets you to tenpai; fold if it would take two (Yuusei 2.4, Push-Pull lessons 11–13).${note}`};
+    return {stance:"fold",why:`1-shanten without enough value${good?"":" or shape"}${turn>10?" this late":""}. Fold (Push-Pull lessons 12 and 14).${note}`};
+  }
+  return {stance:"fold",why:"Two or more steps from tenpai against a threat: fold. Safety above all else (Yuusei 2.4)."};
+}
+
+function pick(A){
+  const {opts,minSh,threats}=A;
+  const best=(arr,f)=>arr.reduce((a,b)=>f(b)>f(a)?b:a);
+  const nx=o=>o.next?(o.next.good!=null?o.next.good*8:o.next.avg*0.15):0;
+  A.efficient=best(opts.filter(o=>o.shanten===minSh),o=>o.ukeire*10+nx(o)+o.floatBonus-(o.isDora?3:0)-(o.red&&state.aka?2:0));
+  const risk=o=>threats.length?o.EL:o.general*50;
+  A.safest=best(opts,o=>-risk(o)*100-o.shanten*0.5+o.ukeire*0.001);
+  const pf=pushFold(A);A.stance=pf.stance;A.stanceWhy=pf.why;
+  // weights fitted to 27 answered problems from the wwyd-chan books (see notes at the bottom of the page)
+  const digitalScore=o=>{
+    let s=-o.shanten*1000+o.floatBonus;
+    if(o.shanten===0) s+=o.ukeire*(o.goodWait?1.3:1);
+    else if(o.shanten===1) s+=0.1*o.ukeire+0.7*o.ukeire*(o.next&&o.next.good!=null?o.next.good:0.6);
+    else s+=0.1*o.ukeire+0.3*(o.next?o.next.avg:o.ukeire*0.4);
+    s+=(o.ns===0?4:0)-0.5*o.ns+4*o.dk+0.3*o.dacc;
+    if(o.isYakuhaiPair)s-=3;
+    if(threats.length){s-=o.EL/(A.stance==="careful"?60:150);}
+    else if(A.turn>=7)s-=o.general*0.3;
+    return s;
+  };
+  A.digital=A.stance==="fold"?A.safest:best(opts,digitalScore);
+}
+
+/* ================= rendering ================= */
+const pctClass=p=>p<=2?"lo":p<=6?"mid":"hi";
+const fmtPct=p=>(p===0?"0":p<10?p.toFixed(1):p.toFixed(0))+"%";
+const shText=s=>s===0?"Tenpai":s<0?"Win":s+"-shanten";
+function verdictEl(title,o,body,primary){
+  const v=document.createElement("div");v.className="verdict"+(primary?" primary":"");
+  const left=document.createElement("div");left.appendChild(tileEl(o.t,o.red,{tag:"span",size:"big"}));
+  const right=document.createElement("div");right.innerHTML=`<h3>${title}: ${nameOf(o.t,o.red)}</h3>`+body;
+  v.append(left,right);return v;
+}
+const drawsHtml=o=>`<div class="draws">${o.draws.map(x=>tileEl(x.t,false,{tag:"span",size:"sm"}).outerHTML).join("")}</div>`;
+function dangerLine(o,A){
+  if(A.threats.length) return o.pList.map(x=>`${x.o.label}: ${fmtPct(x.p)} (${x.why})`).join("; ")+(o.EL?`. Expected loss about ${Math.round(o.EL/100)*100} points`:"");
+  return `About ${fmtPct(o.general)} if someone riichis now`;
+}
+function nextText(o){
+  if(!o.next)return "";
+  if(o.next.good!=null)return ` Good-wait tenpai on ${Math.round(o.next.good*100)}% of your improving draws.`;
+  return ` After a useful draw you’d have about ${Math.round(o.next.avg)} useful tiles.`;
+}
+function riichiAdvice(o){
+  if(o.shanten!==0)return "";
+  const v=o.val;
+  if(!v.closed) return v.yaku?"":` <b>No yaku:</b> this open hand can’t win as it stands.`;
+  const damaHan=v.yaku+v.dora+v.aka;
+  if(o.furiten) return o.ukeire>=8?" Furiten, but a wide wait: riichi is still fine (SMS 1.12).":" Furiten on a narrow wait: you can only win by tsumo.";
+  if(damaHan>=6&&v.yaku) return " Dama: it’s already haneman without riichi (SMS 1.2.1).";
+  if(damaHan>=4&&v.yaku) return " Dama is reasonable here: mangan-level without riichi (SMS 1.2.1, Push-Pull 5).";
+  if(!v.yaku) return " Riichi: you need it for a yaku, and a headstart riichi is strong even on a bad wait (SMS 1.3).";
+  return o.goodWait?" Riichi: a headstart ryanmen tenpai is an ironclad riichi (SMS 1.2).":" Riichi is usually right even on a bad wait; dama only with a confirmed 5200+ (SMS 1.3).";
+}
+
+function renderResults(full){
+  const A=lastAnalysis;if(!A)return;
+  const res=document.getElementById("results");
+  let pf=document.getElementById("pfBox"),vb=document.getElementById("verdictBox"),ab=document.getElementById("analog"),tb=document.getElementById("tableBox");
+  if(full||!pf){
+    res.innerHTML=`<div id="pfBox"></div><div class="verdicts" id="verdictBox"></div><div id="analogWrap" style="margin-top:10px"></div><div id="tableBox"></div>`;
+    pf=document.getElementById("pfBox");vb=document.getElementById("verdictBox");tb=document.getElementById("tableBox");
+    document.getElementById("analogWrap").appendChild(analogShell());
+  }
+  pf.innerHTML="";
+  if(A.threats.length){
+    const b=document.createElement("div");b.className="banner "+(A.stance==="fold"?"fold":"push");
+    const who=A.threats.map(o=>o.riichi?`riichi from ${o.label}${o.dealer?" (dealer)":""}`:`${o.label}’s open hand${o.dealer?" (dealer)":""}`).join(" and ");
+    b.textContent=`Facing ${who}. ${A.stanceWhy}`;pf.appendChild(b);
+  }
+  vb.innerHTML="";
+  const e=A.efficient;
+  vb.appendChild(verdictEl("Most efficient",e,`<p>${shText(e.shanten)} with ${e.ukeire} useful tile${e.ukeire===1?"":"s"} left across ${e.draws.length} kind${e.draws.length===1?"":"s"}.${nextText(e)}${e.furiten?" This wait is furiten.":""}</p>${drawsHtml(e)}`));
+  const s=A.safest;
+  vb.appendChild(verdictEl("Safest",s,`<p>${dangerLine(s,A)}. Leaves you ${shText(s.shanten)}${s.shanten===A.minSh?", no loss in speed":", one step slower"}.</p>`));
+  const d=A.digital;let dWhy;
+  if(A.stance==="fold")dWhy="Fold: take the lowest expected loss now, and keep tiles that will stay safe for later turns (SMS 3.1.3).";
+  else{
+    const bits=[];
+    if(d.t===e.t)bits.push("Same as the most efficient discard");
+    else bits.push(`Gives up ${Math.max(0,e.ukeire-d.ukeire)} tile${e.ukeire-d.ukeire===1?"":"s"} of acceptance for value, shape or safety`);
+    if(d.floatClass)bits.push(`isolated ${d.floatClass} tile, which Yuusei’s order cuts ${d.floatClass==="guest wind"?"first":"early"}`);
+    if(A.stance==="push")bits.push("you’re pushing, so it weighs expected loss between close options");
+    if(A.stance==="careful")bits.push("you’re holding on carefully, so risk is weighted heavily");
+    if(!A.threats.length&&A.turn>=7)bits.push("midgame, so it leans toward cutting the riskier floater now (Yuusei 2)");
+    dWhy=bits.join("; ")+".";
+  }
+  vb.appendChild(verdictEl("Digital",d,`<p class="why">${dWhy}</p><p>${shText(d.shanten)}, ${d.ukeire} tiles, about ${d.val.han+(d.val.closed&&d.shanten>=0?1:0)} han${d.val.closed?" with riichi":""}.${nextText(d)} ${dangerLine(d,A)}.</p>${riichiAdvice(d)?`<p class="advice">${riichiAdvice(d)}</p>`:""}`,true));
+
+  // table
+  tb.innerHTML="";
+  const h=document.createElement("h2");h.textContent="Every discard";tb.appendChild(h);
+  const tw=document.createElement("div");tw.className="table-wrap";
+  const sorted=[...A.opts].sort((a,b)=>a.shanten-b.shanten||b.ukeire-a.ukeire||(a.EL-b.EL));
+  tw.innerHTML=`<table><thead><tr><th>Discard</th><th>Result</th><th>Useful tiles</th><th>Next step</th><th>${A.threats.length?"Deal-in / loss":"Risk if riichi"}</th><th>Notes</th></tr></thead><tbody></tbody></table>`;
+  const tbody=tw.querySelector("tbody");
+  sorted.forEach(o=>{
+    const tr=document.createElement("tr");
+    const td0=document.createElement("td");td0.appendChild(tileEl(o.t,o.red,{tag:"span",size:"sm"}));tr.appendChild(td0);
+    const tags=[];
+    if(o===A.efficient)tags.push("Efficient");if(o===A.safest)tags.push("Safest");if(o===A.digital)tags.push("Digital");
+    if(o.isDora)tags.push("Dora");if(o.red&&state.aka)tags.push("Red five");if(o.isYakuhaiPair)tags.push("Breaks yakuhai pair");
+    if(o.furiten)tags.push("Furiten wait");if(o.shanten===0)tags.push(o.goodWait?"Good wait":"Bad wait");
+    const next=o.next?(o.next.good!=null?Math.round(o.next.good*100)+"% good tenpai":"≈"+Math.round(o.next.avg)+" tiles"):(o.shanten>=1&&o.shanten===A.minSh?'<span class="small">…</span>':"–");
+    const risk=A.threats.length?`<span class="pct ${pctClass(o.pDeal)}">${fmtPct(o.pDeal)}</span> <span class="small">${Math.round(o.EL/100)*100}</span>`:`<span class="pct ${pctClass(o.general)}">${fmtPct(o.general)}</span>`;
+    tr.insertAdjacentHTML("beforeend",`<td>${shText(o.shanten)}</td><td>${o.ukeire} <span class="small">(${o.draws.length})</span></td><td>${next}</td><td>${risk}</td><td>${tags.map(t=>`<span class="tag">${t}</span>`).join("")}</td>`);
+    tbody.appendChild(tr);
+  });
+  tb.appendChild(tw);
+  const n=document.createElement("p");n.className="small";
+  const R=rankInfo();
+  n.textContent=`Turn ${A.turn}. ${A.doras.length?"Dora: "+A.doras.map(t=>nameOf(t)).join(", ")+". ":"No dora indicator entered. "}${state.aka?"Red fives on. ":"No red fives. "}${R?"You are in "+["1st","2nd","3rd","4th"][R.rank-1]+". ":""}Deal-in rates are Tenhou statistics for the current turn; the expected loss is in points. Tsumogiri and the order of discards after a riichi aren’t tracked.`;
+  tb.appendChild(n);
+}
+
+/* ================= knowledge base ================= */
+const PRINCIPLES=[
+ ["SMS 1.2–1.3","A headstart tenpai is a riichi, ryanmen or not; dama only with a confirmed haneman, or 5200+ with a yaku."],
+ ["SMS 1.7–1.8","Honor-wait riichi wins about as often as ryanmen riichi; choose between them on value."],
+ ["SMS 1.11","For an honor tanki, a once-discarded honor beats a live one."],
+ ["SMS 1.12","Furiten sanmenchan riichi wins about as often as a bad-shape riichi."],
+ ["SMS 1.14","Suji-trap riichi waits win plenty."],
+ ["SMS 2.2","Chase with ryanmen tenpai against non-dealer riichi even for riichi-only; against dealer riichi generally push too."],
+ ["SMS 2.3","Bad-wait tenpai against one riichi: 2 han is barely worth pushing, 3 han clearly is."],
+ ["SMS 2.6–2.7","Against two riichi, push good-wait tenpai; bad-wait tenpai needs about 4 han."],
+ ["SMS 3.1","Safety tiers at turn 9: genbutsu; 2–3-seen honors; suji 1/9, double suji and once-seen honors (~2%); suji 2/8, 3/7 and live honors (4–6%); non-suji 1/9, half-suji, non-suji 2/8, 3/7 (7–10%); non-suji 4/5/6 (13%)."],
+ ["SMS 3.2","Live honors grow dangerous late; by turn 15+ suji 2/8 is safer than a live honor."],
+ ["SMS 3.3","Tiles outside a pre-riichi discard (sotogawa) are about as safe as suji."],
+ ["SMS 3.4","Suji of the riichi tile (suji trap) 2/8 and 3/7 are nearly as dangerous as non-suji; trap 1/9 is fine."],
+ ["SMS 3.5–3.6","A 1/9 riichi tile makes 2/8 next to it dangerous, a 2/8 riichi tile makes 1/9 dangerous; an early 5 cut makes 3/7 safer and 1/9 more dangerous."],
+ ["SMS 3.8","One-chance tiles sit between suji and non-suji; double one-chance is about suji-safe."],
+ ["SMS 3.10","Dora deal in more often and cost about 40% more."],
+ ["Push-Pull ch. 1","Call riichi at once on a headstart tenpai; dora-1 kanchan is an immediate riichi; a dama mangan on a middle wait can stay dama."],
+ ["Push-Pull ch. 1","Aim for mangan until turns 8–10, then prioritize tenpai. If a mangan is visible, go for it."],
+ ["Push-Pull ch. 2","A good-shape, high-value 1-shanten is worth holding against an early riichi; a cheap or poor-shape 1-shanten folds."],
+ ["Push-Pull ch. 2","Against two riichi, never push from 1-shanten. Chiitoi and kokushi 1-shanten can’t fight."],
+ ["Push-Pull ch. 2","Tenpai on the riichi player’s genbutsu is still usually a riichi."],
+ ["Push-Pull ch. 3","In the South round, know the gaps above and below you; don’t fold if a noten payment flips your placement; step aside for a last-place dealer’s riichi."],
+ ["Yuusei 1–3","Cut isolated tiles guest wind, yakuhai, 1/9, 2/8, 3–7; six blocks are fine early; with all good shapes and two pairs, aim for perfect 1-shanten."],
+ ["Yuusei 2.4","Don’t push from 2-shanten. At 1-shanten, push only if one dangerous tile gets you to tenpai."],
+ ["Yuusei 3.1","Speed reading: a standard pond goes guest wind, yakuhai, terminals, 2/8, then 3–7. One 3–7 cut is speed B, two is A, a cut ryanmen or 2–8 dora is A."],
+ ["Yuusei 3.2","Flush hands: a once-cut or live honor discard is speed B, one flush-suit tile is A, two is S."],
+ ["Yuusei 3.5","The tile cut after a pon is often unrelated to the wait; after a chii, an unrelated cut often means the wait is next to it."],
+ ["Double Your Safe Tiles 1","Read an open hand’s yaku first: tanyao calls make terminals and honors safe; yakuhai-only hands make live yakuhai dangerous."],
+ ["Double Your Safe Tiles 2","Treat a player with two or more calls as likely tenpai; watch for honitsu players discarding honors or their suit."],
+ ["136 Strategies","Riichi is worth about 1.5 han; push early, fold late; don’t be the third to riichi; the 2nd riichi is more dangerous; down two sets, time to fold."],
+ ["136 Strategies","Pinfu beats value tiles; tiles near the dora are precious; when in doubt aim for tanyao; three open calls means no folding."],
+ ["100 Techniques","Tenhou’s 4th-place penalty raises the bar to push; free rule with uma and shugi lowers it. In last, take more risk."],
+ ["Awakening","Call yakuhai at once; call the bad shapes and keep the good; don’t hold safe tiles too early."],
+ ["Japanese Mahjong Strategy","Hands worth haneman or more can stay dama; pinfu-only is worth riichi because ippatsu and ura raise it above 3000 on average."],
+ ["Suphx","Play adaptively against open hands, push partially when it pays, and stay flexible late in the hand."],
+ ["72 Pieces","Instant riichi: average hand; tsumogiri chase riichi from strong players: usually mangan+. First place’s hand values vary widely, last place’s run high."],
+ ["Super Menzen","Don’t take defensive risks for cheap hands; calls are easier with fixed shapes, an extra pair, or high value. The dealer leans offensive."],
+ ["ASAPIN calling","Tanyao dora-2 1-shanten with two ryanmen can call early; open up readily when kamicha feeds middle tiles."]
+];
+
+/* ================= Claude (sample) ================= */
+let sampleFn=null, inClaude=false;
+const KEY_K="kawa.apiKey", MODEL_K="kawa.model", DEFAULT_MODEL="claude-sonnet-5-5";
+const store={get:k=>{try{return localStorage.getItem(k)||"";}catch(e){return "";}},set:(k,v)=>{try{v?localStorage.setItem(k,v):localStorage.removeItem(k);}catch(e){}}};
+const apiKey=()=>store.get(KEY_K), modelName=()=>store.get(MODEL_K)||DEFAULT_MODEL;
+const blobToB64=b=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(",")[1]);r.onerror=()=>rej(r.error);r.readAsDataURL(b);});
+// Direct Anthropic API client used when the page runs outside Claude (GitHub Pages or the Android app)
+const directClaude={
+  limits:async()=>({images:{maxCount:5}}),
+  json:async(prompt,opts={})=>{
+    if(!apiKey()) throw {code:"no_key"};
+    const content=[];
+    for(const b of (opts.images||[])) content.push({type:"image",source:{type:"base64",media_type:b.type||"image/jpeg",data:await blobToB64(b)}});
+    content.push({type:"text",text:prompt});
+    let r;
+    try{
+      r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
+        headers:{"content-type":"application/json","x-api-key":apiKey(),"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+        body:JSON.stringify({model:modelName(),max_tokens:4000,messages:[{role:"user",content}]})});
+    }catch(e){throw {code:"network"};}
+    if(r.status===401||r.status===403) throw {code:"bad_key"};
+    if(r.status===429) throw {code:"rate_limited"};
+    if(r.status===404) throw {code:"bad_model"};
+    if(!r.ok) throw {code:"api_error"};
+    const d=await r.json();
+    const text=(d.content||[]).map(x=>x.type==="text"?x.text:"").join("").replace(/```json|```/g,"");
+    const s=text.indexOf("{"), e=text.lastIndexOf("}");
+    if(s<0||e<0) throw {code:"api_error"};
+    return JSON.parse(text.slice(s,e+1));
+  }
+};
+const ERR={no_key:"Add your Anthropic API key under Rules and scores to use this.",bad_key:"The API key was rejected. Check it under Rules and scores.",bad_model:"That model name wasn’t found. Check it under Rules and scores.",network:"Couldn’t reach Claude. Check your connection.",api_error:"Claude returned an error. Try again."};
+function updateAiUi(){
+  const photo=document.getElementById("photoBtn");
+  if(!inClaude){sampleFn=apiKey()?directClaude:null;document.getElementById("connBox").classList.remove("hidden");}
+  photo.classList.toggle("hidden",!sampleFn);
+  if(!sampleFn) flash("Add your Anthropic API key under Rules and scores to read photos. You can still tap your tiles in below.");
+}
+(async()=>{
+  try{if(window.claude&&window.claude.use){sampleFn=await window.claude.use("sample");inClaude=!!sampleFn;}}catch(e){sampleFn=null;}
+  document.getElementById("modelInput").value=modelName();
+  document.getElementById("keyInput").value=apiKey()?"••••••••":"";
+  updateAiUi();
+  if(lastAnalysis)renderResults(true);
+})();
+document.getElementById("keySave").addEventListener("click",()=>{
+  const k=document.getElementById("keyInput").value.trim(), m=document.getElementById("modelInput").value.trim();
+  if(k&&!k.startsWith("•")) store.set(KEY_K,k);
+  store.set(MODEL_K,m&&m!==DEFAULT_MODEL?m:"");
+  document.getElementById("keyInput").value=apiKey()?"••••••••":"";
+  document.getElementById("keyStatus").textContent=apiKey()?"Saved on this device.":"No key saved.";
+  updateAiUi(); if(lastAnalysis)renderResults(true);
+});
+document.getElementById("keyClear").addEventListener("click",()=>{
+  store.set(KEY_K,"");document.getElementById("keyInput").value="";
+  document.getElementById("keyStatus").textContent="Key removed from this device.";
+  updateAiUi(); if(lastAnalysis)renderResults(true);
+});
+function analogShell(){
+  const an=document.createElement("div");an.className="verdict";an.id="analog";
+  an.innerHTML=`<div><span class="tile big" style="opacity:.35;cursor:default" aria-hidden="true"><span class="h">?</span></span></div>
+    <div><h3>Analog read</h3><p>Reads opponents’ discards, calls and the score situation using the books’ principles, the way a strong human would.</p>
+    <div class="row" style="margin-top:8px"><button class="btn" id="analogBtn" type="button">Get an analog read</button></div>
+    <div class="status" id="analogStatus"></div></div>`;
+  const b=an.querySelector("#analogBtn");b.addEventListener("click",runAnalog);
+  if(!sampleFn){b.disabled=true;an.querySelector("#analogStatus").textContent="Add your Anthropic API key under Rules and scores to turn on analog reads.";}
+  return an;
+}
+function stateText(){
+  const z=state.z,t=a=>a.map(codeR).join(" ")||"(none)";
+  const opp=o=>{const d=z[o.k];return `${o.label} (${o.where}, seat ${WIND_NAMES[oppSeat(o)]}): discards ${d.tiles.map((x,i)=>(i===d.riichi?"[R]":"")+codeR(x)).join(" ")||"(none)"}; calls ${t(d.calls)}`;};
+  const R=rankInfo();
+  return `Rules: ${state.aka?"three red fives":"no red fives"}; ${state.rules==="tenhou"?"Tenhou ranked (avoiding 4th matters most)":"uma-based (top place matters)"}.
+Round: ${WIND_NAMES[state.round]}. My seat: ${WIND_NAMES[state.seat]}${state.seat===0?" (dealer)":""}.
+Scores: ${state.scores.some(v=>v!=="")?`me ${state.scores[0]||"?"}, shimocha ${state.scores[1]||"?"}, toimen ${state.scores[2]||"?"}, kamicha ${state.scores[3]||"?"}`+(R?` (I am ${["1st","2nd","3rd","4th"][R.rank-1]})`:""):"not entered"}.
+My hand: ${t(z.hand.tiles)}
+My calls: ${t(z.calls.tiles)}
+My discards: ${t(z.mydisc.tiles)}
+Dora indicators: ${t(z.dora.tiles)}
+${OPPS.map(opp).join("\n")}`;
+}
+async function runAnalog(){
+  const A=lastAnalysis;if(!A||!sampleFn)return;
+  const btn=document.getElementById("analogBtn"),st=document.getElementById("analogStatus");
+  btn.disabled=true;st.classList.remove("err");st.textContent="Thinking…";
+  const table=A.opts.map(o=>`${codeR(o)}: ${shText(o.shanten)}, ${o.ukeire} useful tiles${o.next?(o.next.good!=null?`, ${Math.round(o.next.good*100)}% good-wait tenpai`:`, next ≈${Math.round(o.next.avg)}`):""}, ${A.threats.length?`deal-in ${fmtPct(o.pDeal)}, expected loss ${Math.round(o.EL)}`:`risk if riichi ${fmtPct(o.general)}`}`).join("\n");
+  const speeds=OPPS.map(o=>{const s=A.speeds[o.k];return s?`${o.label}: ${s.level==="R"?"riichi":"speed "+s.level} (${s.why})`:`${o.label}: unknown`;}).join("; ");
+  const prompt=`You are a strong Japanese riichi mahjong coach giving an "analog" read: reading opponents' discards, calls, timing and the score/placement situation like a strong human, rather than pure efficiency math. Tile codes: 1-9 + m/p/s, honors 1z-7z = East South West North White Green Red, 0m/0p/0s = red five. [R] marks a riichi tile.
+
+TABLE
+${stateText()}
+Turn about ${A.turn}. Opponent speed levels (Yuusei's speed reading): ${speeds}.
+
+ENGINE RESULTS (exact efficiency; deal-in rates from Statistical Mahjong Strategy tables)
+${table}
+Engine picks: efficient ${codeR(A.efficient)}, safest ${codeR(A.safest)}, digital ${codeR(A.digital)}. Push/fold verdict: ${A.stance}. ${A.stanceWhy}
+
+PRINCIPLES FROM THE PLAYER'S BOOKS (cite the source label when you use one)
+${PRINCIPLES.map(p=>"- ["+p[0]+"] "+p[1]).join("\n")}
+
+Choose one discard from my hand. Read each opponent's discards and calls for hand direction, speed, likely yaku and waits where possible. Factor in the rules and scores. Be concrete and brief. If tiles look misread or the input is impossible, say so in "reads". Return ONLY JSON:
+{"discard":"tile code from my hand","headline":"one sentence","reasons":["2-4 short reasons"],"reads":["one short read per opponent worth mentioning"],"sources":["book labels you used"]}`;
+  try{
+    const out=await sampleFn.json(prompt,{modelTier:"default"});
+    const p=parseCode(out&&out.discard);
+    const an=document.getElementById("analog");
+    const left=an.firstElementChild;left.innerHTML="";
+    if(p)left.appendChild(tileEl(p.t,p.red&&state.aka,{tag:"span",size:"big"}));
+    const right=an.lastElementChild;
+    right.innerHTML=`<h3>Analog read${p?": "+nameOf(p.t,p.red&&state.aka):""}</h3>
+      <p class="why">${esc(out.headline||"")}</p>
+      ${(out.reasons||[]).length?`<ul>${out.reasons.map(r=>`<li>${esc(r)}</li>`).join("")}</ul>`:""}
+      ${(out.reads||[]).length?`<p style="margin-top:8px"><b style="color:var(--ink)">Reads</b></p><ul>${out.reads.map(r=>`<li>${esc(r)}</li>`).join("")}</ul>`:""}
+      ${(out.sources||[]).length?`<p class="src">Drawing on ${out.sources.map(esc).join(", ")}</p>`:""}
+      <div class="row" style="margin-top:8px"><button class="btn ghost" id="analogBtn" type="button">Read again</button></div><div class="status" id="analogStatus"></div>`;
+    document.getElementById("analogBtn").addEventListener("click",runAnalog);
+  }catch(e){
+    btn.disabled=false;st.classList.add("err");
+    st.textContent=e&&ERR[e.code]?ERR[e.code]:e&&e.code==="not_granted"?"Claude access wasn’t allowed, so the analog read is off.":e&&e.code==="rate_limited"?"Too many requests right now. Try again in a minute.":"The analog read didn’t come through. Try again.";
+  }
+}
+
+/* ================= photo reading ================= */
+async function shrink(file){
+  const img=await createImageBitmap(file);
+  const max=1800,sc=Math.min(1,max/Math.max(img.width,img.height));
+  const cv=document.createElement("canvas");cv.width=Math.round(img.width*sc);cv.height=Math.round(img.height*sc);
+  cv.getContext("2d").drawImage(img,0,0,cv.width,cv.height);
+  return await new Promise(r=>cv.toBlob(r,"image/jpeg",0.88));
+}
+const VISION_PROMPT=()=>`Read this photo or screenshot of a Japanese riichi mahjong table. "Me" is the player whose hand faces the camera (bottom of a screenshot).
+Tile codes: number + suit letter. m = characters/manzu (Chinese numerals 一 to 九 above 萬), p = circles/pinzu, s = bamboo/souzu (1s is usually a bird). ${state.aka?"Red fives are 0m, 0p, 0s.":"This game has no red fives: write every five as 5m, 5p or 5s."} Honors: 1z East 東, 2z South 南, 3z West 西, 4z North 北, 5z White (blank or blue frame), 6z Green 發, 7z Red 中.
+Shimocha is the player to my right, toimen across, kamicha to my left. List discards in the order played (each pond reads left to right, row by row, from that player's own point of view). riichi_index is the 0-based index of the sideways tile in that pond, or null. "calls" are the tiles in that player's open melds (pon, chii, kan), all tiles listed.
+Only include tiles you can actually see; never invent tiles to fill a hand. Include my drawn tile in "hand". If scores are shown, read them.
+Return ONLY JSON:
+{"hand":[],"my_calls":[],"my_discards":[],"dora_indicators":[],"shimocha":{"discards":[],"riichi_index":null,"calls":[]},"toimen":{"discards":[],"riichi_index":null,"calls":[]},"kamicha":{"discards":[],"riichi_index":null,"calls":[]},"round_wind":"E","seat_wind":"E","scores":{"me":null,"shimocha":null,"toimen":null,"kamicha":null},"confidence":"low|medium|high","notes":"short note on anything unclear"}`;
+document.getElementById("photo").addEventListener("change",async e=>{
+  const f=e.target.files&&e.target.files[0];e.target.value="";if(!f||!sampleFn)return;
+  const st=document.getElementById("photoStatus");st.classList.remove("err");
+  st.textContent="Reading the tiles… this can take up to a minute.";
+  try{
+    const lim=await sampleFn.limits().catch(()=>null);
+    if(lim&&!lim.images)throw {code:"images_unavailable"};
+    const blob=await shrink(f);
+    const out=await sampleFn.json(VISION_PROMPT(),{images:[blob],modelTier:"complex"});
+    const s=blank(state);const used=Array(34).fill(0);const reds={};let dropped=0;
+    const put=(arr,list)=>{(list||[]).forEach(cd=>{const p=parseCode(cd);if(!p){dropped++;return;}
+      if(used[p.t]>=4){dropped++;return;}
+      if(p.red&&(!state.aka||reds[p.t]))p.red=false;if(p.red)reds[p.t]=1;
+      used[p.t]++;arr.push(p);});};
+    put(s.z.hand.tiles,out.hand);put(s.z.calls.tiles,out.my_calls);put(s.z.mydisc.tiles,out.my_discards);put(s.z.dora.tiles,out.dora_indicators);
+    [["shimo","shimocha"],["toimen","toimen"],["kami","kamicha"]].forEach(([k,j])=>{const o=out[j]||{};put(s.z[k].tiles,o.discards);put(s.z[k].calls,o.calls);
+      const ri=Number.isInteger(o.riichi_index)?o.riichi_index:-1;s.z[k].riichi=ri<s.z[k].tiles.length?ri:-1;});
+    const w={E:0,S:1,W:2,N:3};s.round=Math.min(1,w[out.round_wind]??0);s.seat=w[out.seat_wind]??0;
+    const scs=out.scores||{};s.scores=[scs.me,scs.shimocha,scs.toimen,scs.kamicha].map(v=>Number.isFinite(+v)&&v!==null&&v!==""?String(v):"");
+    state=s;changed();
+    st.textContent=`Read with ${out.confidence||"unknown"} confidence. ${out.notes?out.notes+" ":""}${dropped?dropped+" unreadable tile(s) were skipped. ":""}Check every row against the photo before trusting the advice.`;
+  }catch(err){
+    st.classList.add("err");
+    st.textContent=err&&err.code==="not_granted"?"Claude access wasn’t allowed, so photos can’t be read. You can still tap your tiles in.":
+      err&&err.code==="images_unavailable"?"Sending images to Claude isn’t available here. You can still tap your tiles in.":
+      err&&ERR[err.code]?ERR[err.code]:err&&err.code==="rate_limited"?"Too many requests right now. Try again in a minute.":"The photo couldn’t be read. Try a sharper, straight-on shot or tap the tiles in.";
+  }
+});
+document.getElementById("photoBtn").addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();document.getElementById("photo").click();}});
+
+/* ================= example & clear ================= */
+document.getElementById("exampleBtn").addEventListener("click",()=>{
+  const s=blank(state);const L=a=>a.split(" ").map(parseCode).map(x=>({...x,red:x.red&&state.aka}));
+  s.z.hand.tiles=L("2m 3m 4m 5m 5m 3p 4p 6p 7p 0s 6s 7s 1z 7z");
+  s.z.dora.tiles=L("4p");
+  s.z.mydisc.tiles=L("9m 4z 1p 8s 2z");
+  s.z.shimo.tiles=L("3z 9p 1m 2s 8m 6m");s.z.shimo.riichi=5;
+  s.z.toimen.tiles=L("4z 1s 9s 5z 2p");
+  s.z.kami.tiles=L("2z 7m 9m 3z");s.z.kami.calls=L("6z 6z 6z");
+  s.seat=1;s.round=0;s.scores=["25000","24000","26000","25000"];state=s;changed();
+  flash("Example loaded: South seat, East round. Shimocha just declared riichi and kamicha has a green dragon pon.");
+});
+document.getElementById("clearBtn").addEventListener("click",()=>{state=blank(state);changed();flash("Cleared. Take a photo or tap your tiles in.");});
+
+renderPalette();renderZones();renderSettings();analyze();
+if("serviceWorker" in navigator&&location.protocol==="https:"&&!window.claude){navigator.serviceWorker.register("sw.js").catch(()=>{});}
+</script>
+</body>
+</html>
