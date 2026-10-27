@@ -916,23 +916,27 @@ const directGemini={
     try{
       r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelName())}:generateContent`,{method:"POST",
         headers:{"content-type":"application/json","x-goog-api-key":apiKey()},
-        body:JSON.stringify({contents:[{role:"user",parts}],generationConfig:{responseMimeType:"application/json",maxOutputTokens:8000}})});
+        body:JSON.stringify({contents:[{role:"user",parts}],generationConfig:{responseMimeType:"application/json"}})});
     }catch(e){throw {code:"network"};}
-    if(r.status===429) throw {code:"rate_limited"};
-    if(r.status===404) throw {code:"bad_model"};
-    if(r.status===401||r.status===403) throw {code:"bad_key"};
+    const d=await r.json().catch(()=>null);
     if(!r.ok){
-      const d=await r.json().catch(()=>null), m=JSON.stringify(d||"");
-      throw {code:/API_KEY_INVALID|API key not valid/.test(m)?"bad_key":"api_error"};
+      const detail=d&&d.error&&d.error.message||("HTTP "+r.status);
+      if(r.status===429) throw {code:"rate_limited",detail};
+      if(r.status===404) throw {code:"bad_model",detail};
+      if(r.status===401||r.status===403||/API_KEY_INVALID|API key not valid/.test(JSON.stringify(d||""))) throw {code:"bad_key",detail};
+      throw {code:"api_error",detail};
     }
-    const d=await r.json();
-    const text=(((d.candidates||[])[0]||{}).content||{parts:[]}).parts.map(x=>x.text||"").join("").replace(/```json|```/g,"");
+    const c=(d&&d.candidates||[])[0];
+    if(!c) throw {code:"api_error",detail:"No answer"+(d&&d.promptFeedback&&d.promptFeedback.blockReason?" (blocked: "+d.promptFeedback.blockReason+")":"")};
+    const text=((c.content||{}).parts||[]).filter(x=>!x.thought).map(x=>x.text||"").join("").replace(/```json|```/g,"");
     const s=text.indexOf("{"), e=text.lastIndexOf("}");
-    if(s<0||e<0) throw {code:"api_error"};
-    return JSON.parse(text.slice(s,e+1));
+    if(s<0||e<0) throw {code:"api_error",detail:"No JSON in the answer"+(c.finishReason&&c.finishReason!=="STOP"?" (stopped: "+c.finishReason+")":"")};
+    try{return JSON.parse(text.slice(s,e+1));}
+    catch(x){throw {code:"api_error",detail:"Unreadable JSON"+(c.finishReason&&c.finishReason!=="STOP"?" (stopped: "+c.finishReason+")":"")};}
   }
 };
 const ERR={no_key:"Add your Gemini API key under Rules and scores to use this.",bad_key:"The API key was rejected. Check it under Rules and scores.",bad_model:"That model name wasn’t found. Check it under Rules and scores.",network:"Couldn’t reach Gemini. Check your connection.",api_error:"Gemini returned an error. Try again."};
+const errText=(e,fallback)=>(e&&ERR[e.code]?ERR[e.code]:fallback)+(e&&e.detail?" ("+e.detail+")":"");
 function updateAiUi(){
   const photo=document.getElementById("photoBtn");
   if(!inClaude){sampleFn=apiKey()?directGemini:null;document.getElementById("connBox").classList.remove("hidden");}
@@ -1020,7 +1024,7 @@ Choose one discard from my hand. Read each opponent's discards and calls for han
     document.getElementById("analogBtn").addEventListener("click",runAnalog);
   }catch(e){
     btn.disabled=false;st.classList.add("err");
-    st.textContent=e&&ERR[e.code]?ERR[e.code]:e&&e.code==="not_granted"?"Claude access wasn’t allowed, so the analog read is off.":e&&e.code==="rate_limited"?"Too many requests right now. Try again in a minute.":"The analog read didn’t come through. Try again.";
+    st.textContent=e&&e.code==="not_granted"?"Claude access wasn’t allowed, so the analog read is off.":e&&e.code==="rate_limited"?errText({...e,code:""},"Too many requests right now. Try again in a minute."):errText(e,"The analog read didn’t come through. Try again.");
   }
 }
 
@@ -1063,7 +1067,7 @@ async function readPhoto(e){
     st.classList.add("err");
     st.textContent=err&&err.code==="not_granted"?"Claude access wasn’t allowed, so photos can’t be read. You can still tap your tiles in.":
       err&&err.code==="images_unavailable"?"Sending images to Claude isn’t available here. You can still tap your tiles in.":
-      err&&ERR[err.code]?ERR[err.code]:err&&err.code==="rate_limited"?"Too many requests right now. Try again in a minute.":"The photo couldn’t be read. Try a sharper, straight-on shot or tap the tiles in.";
+      err&&err.code==="rate_limited"?errText({...err,code:""},"Too many requests right now. Try again in a minute."):errText(err,"The photo couldn’t be read. Try a sharper, straight-on shot or tap the tiles in.");
   }
 }
 document.getElementById("photo").addEventListener("change",readPhoto);
