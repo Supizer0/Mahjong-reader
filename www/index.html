@@ -930,37 +930,57 @@ const store={get:k=>{try{return localStorage.getItem(k)||"";}catch(e){return "";
 const apiKey=()=>store.get(KEY_K), modelName=()=>store.get(MODEL_K)||DEFAULT_MODEL;
 const blobToB64=b=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(",")[1]);r.onerror=()=>rej(r.error);r.readAsDataURL(b);});
 // Direct Gemini API client used when the page runs outside Claude (GitHub Pages or the Android app)
+// Tried in order after the chosen model when Gemini is overloaded or out of quota
+const FALLBACK_MODELS=["gemini-flash-latest","gemini-2.5-flash","gemini-flash-lite-latest","gemini-2.5-flash-lite"];
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const directGemini={
+  lastModel:"",
   limits:async()=>({images:{maxCount:5}}),
   json:async(prompt,opts={})=>{
     if(!apiKey()) throw {code:"no_key"};
     const parts=[];
     for(const b of (opts.images||[])) parts.push({inline_data:{mime_type:b.type||"image/jpeg",data:await blobToB64(b)}});
     parts.push({text:prompt});
-    let r;
-    try{
-      r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelName())}:generateContent`,{method:"POST",
-        headers:{"content-type":"application/json","x-goog-api-key":apiKey()},
-        body:JSON.stringify({contents:[{role:"user",parts}],generationConfig:{responseMimeType:"application/json"}})});
-    }catch(e){throw {code:"network"};}
-    const d=await r.json().catch(()=>null);
-    if(!r.ok){
-      const detail=d&&d.error&&d.error.message||("HTTP "+r.status);
-      if(r.status===429) throw {code:"rate_limited",detail};
-      if(r.status===404) throw {code:"bad_model",detail};
-      if(r.status===401||r.status===403||/API_KEY_INVALID|API key not valid/.test(JSON.stringify(d||""))) throw {code:"bad_key",detail};
-      throw {code:"api_error",detail};
+    const body=JSON.stringify({contents:[{role:"user",parts}],generationConfig:{responseMimeType:"application/json"}});
+    const note=opts.onStatus||(()=>{});
+    const models=[modelName(),...FALLBACK_MODELS.filter(m=>m!==modelName())];
+    let last=null;
+    for(const [mi,model] of models.entries()){
+      for(let attempt=0;attempt<2;attempt++){
+        let r;
+        try{
+          r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,{method:"POST",
+            headers:{"content-type":"application/json","x-goog-api-key":apiKey()},body});
+        }catch(e){throw {code:"network"};}
+        const d=await r.json().catch(()=>null);
+        if(r.ok){directGemini.lastModel=model;return parseGemini(d);}
+        const detail=d&&d.error&&d.error.message||("HTTP "+r.status);
+        if(r.status===401||r.status===403||/API_KEY_INVALID|API key not valid/.test(JSON.stringify(d||""))) throw {code:"bad_key",detail};
+        if(r.status===404){last={code:"bad_model",detail};break;}
+        if(r.status===429){last={code:"rate_limited",detail};break;}
+        if(r.status===500||r.status===503){
+          last={code:"busy",detail};
+          if(attempt===0){note(`Gemini is busy (${model}), retrying…`);await sleep(2500);continue;}
+          break;
+        }
+        throw {code:"api_error",detail};
+      }
+      if(mi<models.length-1) note(`${model} is unavailable, trying ${models[mi+1]}…`);
     }
-    const c=(d&&d.candidates||[])[0];
-    if(!c) throw {code:"api_error",detail:"No answer"+(d&&d.promptFeedback&&d.promptFeedback.blockReason?" (blocked: "+d.promptFeedback.blockReason+")":"")};
-    const text=((c.content||{}).parts||[]).filter(x=>!x.thought).map(x=>x.text||"").join("").replace(/```json|```/g,"");
-    const s=text.indexOf("{"), e=text.lastIndexOf("}");
-    if(s<0||e<0) throw {code:"api_error",detail:"No JSON in the answer"+(c.finishReason&&c.finishReason!=="STOP"?" (stopped: "+c.finishReason+")":"")};
-    try{return JSON.parse(text.slice(s,e+1));}
-    catch(x){throw {code:"api_error",detail:"Unreadable JSON"+(c.finishReason&&c.finishReason!=="STOP"?" (stopped: "+c.finishReason+")":"")};}
+    throw last||{code:"api_error"};
   }
 };
-const ERR={no_key:"Add your Gemini API key under Rules and scores to use this.",bad_key:"The API key was rejected. Check it under Rules and scores.",bad_model:"That model name wasn’t found. Check it under Rules and scores.",network:"Couldn’t reach Gemini. Check your connection.",api_error:"Gemini returned an error. Try again."};
+function parseGemini(d){
+  const c=(d&&d.candidates||[])[0];
+  if(!c) throw {code:"api_error",detail:"No answer"+(d&&d.promptFeedback&&d.promptFeedback.blockReason?" (blocked: "+d.promptFeedback.blockReason+")":"")};
+  const text=((c.content||{}).parts||[]).filter(x=>!x.thought).map(x=>x.text||"").join("").replace(/```json|```/g,"");
+  const s=text.indexOf("{"), e=text.lastIndexOf("}");
+  const why=c.finishReason&&c.finishReason!=="STOP"?" (stopped: "+c.finishReason+")":"";
+  if(s<0||e<0) throw {code:"api_error",detail:"No JSON in the answer"+why};
+  try{return JSON.parse(text.slice(s,e+1));}
+  catch(x){throw {code:"api_error",detail:"Unreadable JSON"+why};}
+}
+const ERR={no_key:"Add your Gemini API key under Rules and scores to use this.",bad_key:"The API key was rejected. Check it under Rules and scores.",bad_model:"That model name wasn’t found. Check it under Rules and scores.",network:"Couldn’t reach Gemini. Check your connection.",api_error:"Gemini returned an error. Try again.",busy:"Gemini’s servers are overloaded on every model tried. Wait a minute and try again."};
 const errText=(e,fallback)=>(e&&ERR[e.code]?ERR[e.code]:fallback)+(e&&e.detail?" ("+e.detail+")":"");
 function updateAiUi(){
   const photo=document.getElementById("photoArea");
@@ -1034,7 +1054,7 @@ ${PRINCIPLES.map(p=>"- ["+p[0]+"] "+p[1]).join("\n")}
 Choose one discard from my hand. Read each opponent's discards and calls for hand direction, speed, likely yaku and waits where possible. Factor in the rules and scores. Be concrete and brief. If tiles look misread or the input is impossible, say so in "reads". Return ONLY JSON:
 {"discard":"tile code from my hand","headline":"one sentence","reasons":["2-4 short reasons"],"reads":["one short read per opponent worth mentioning"],"sources":["book labels you used"]}`;
   try{
-    const out=await sampleFn.json(prompt,{modelTier:"default"});
+    const out=await sampleFn.json(prompt,{modelTier:"default",onStatus:t=>{st.textContent=t;}});
     const p=parseCode(out&&out.discard);
     const an=document.getElementById("analog");
     const left=an.firstElementChild;left.innerHTML="";
@@ -1101,7 +1121,7 @@ async function readPhotos(){
   try{
     const lim=await sampleFn.limits().catch(()=>null);
     if(lim&&(!lim.images||(lim.images.maxCount||1)<images.length))throw {code:"images_unavailable"};
-    const out=await sampleFn.json(VISION_PROMPT(which),{images,modelTier:"complex"});
+    const out=await sampleFn.json(VISION_PROMPT(which),{images,modelTier:"complex",onStatus:t=>{st.textContent=t;}});
     const s=blank(state);const used=Array(34).fill(0);const reds={};let dropped=0;
     const put=(arr,list)=>{(list||[]).forEach(cd=>{const p=parseCode(cd);if(!p){dropped++;return;}
       if(used[p.t]>=4){dropped++;return;}
@@ -1113,7 +1133,7 @@ async function readPhotos(){
     const w={E:0,S:1,W:2,N:3};s.round=Math.min(1,w[out.round_wind]??0);s.seat=w[out.seat_wind]??0;
     const scs=out.scores||{};s.scores=[scs.me,scs.shimocha,scs.toimen,scs.kamicha].map(v=>Number.isFinite(+v)&&v!==null&&v!==""?String(v):"");
     state=s;changed();
-    st.textContent=`Read with ${out.confidence||"unknown"} confidence. ${out.notes?out.notes+" ":""}${dropped?dropped+" unreadable tile(s) were skipped. ":""}Check every row against the photos before trusting the advice.`;
+    st.textContent=`Read with ${out.confidence||"unknown"} confidence${sampleFn===directGemini&&directGemini.lastModel?" by "+directGemini.lastModel:""}. ${out.notes?out.notes+" ":""}${dropped?dropped+" unreadable tile(s) were skipped. ":""}Check every row against the photos before trusting the advice.`;
   }catch(err){
     st.classList.add("err");
     st.textContent=err&&err.code==="not_granted"?"Claude access wasn’t allowed, so photos can’t be read. You can still tap your tiles in.":
