@@ -173,9 +173,9 @@ summary{cursor:pointer;font-weight:700}
       <span>Round</span><div class="seg" id="roundSeg"></div>
       <span>Your seat</span><div class="seg" id="seatSeg"></div>
       <div class="full hidden" id="connBox">
-        <div class="small" style="margin-bottom:4px">Claude connection: photo reading and the analog read need your own Anthropic API key. It stays on this device.</div>
+        <div class="small" style="margin-bottom:4px">Gemini connection: photo reading and the analog read need your own Gemini API key (from Google AI Studio). It stays on this device.</div>
         <div class="row">
-          <input id="keyInput" type="password" autocomplete="off" placeholder="sk-ant-…" style="flex:1;min-width:180px;font:inherit;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);min-height:40px">
+          <input id="keyInput" type="password" autocomplete="off" placeholder="AIza…" style="flex:1;min-width:180px;font:inherit;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);min-height:40px">
           <input id="modelInput" type="text" autocomplete="off" style="width:170px;font:inherit;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);min-height:40px">
           <button class="btn" id="keySave" type="button">Save</button>
           <button class="btn ghost" id="keyClear" type="button">Remove key</button>
@@ -895,43 +895,46 @@ const PRINCIPLES=[
  ["ASAPIN calling","Tanyao dora-2 1-shanten with two ryanmen can call early; open up readily when kamicha feeds middle tiles."]
 ];
 
-/* ================= Claude (sample) ================= */
+/* ================= AI connection ================= */
 let sampleFn=null, inClaude=false;
-const KEY_K="kawa.apiKey", MODEL_K="kawa.model", DEFAULT_MODEL="claude-sonnet-5-5";
+const KEY_K="kawa.geminiKey", MODEL_K="kawa.geminiModel", DEFAULT_MODEL="gemini-flash-latest";
 const store={get:k=>{try{return localStorage.getItem(k)||"";}catch(e){return "";}},set:(k,v)=>{try{v?localStorage.setItem(k,v):localStorage.removeItem(k);}catch(e){}}};
 const apiKey=()=>store.get(KEY_K), modelName=()=>store.get(MODEL_K)||DEFAULT_MODEL;
 const blobToB64=b=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(",")[1]);r.onerror=()=>rej(r.error);r.readAsDataURL(b);});
-// Direct Anthropic API client used when the page runs outside Claude (GitHub Pages or the Android app)
-const directClaude={
+// Direct Gemini API client used when the page runs outside Claude (GitHub Pages or the Android app)
+const directGemini={
   limits:async()=>({images:{maxCount:5}}),
   json:async(prompt,opts={})=>{
     if(!apiKey()) throw {code:"no_key"};
-    const content=[];
-    for(const b of (opts.images||[])) content.push({type:"image",source:{type:"base64",media_type:b.type||"image/jpeg",data:await blobToB64(b)}});
-    content.push({type:"text",text:prompt});
+    const parts=[];
+    for(const b of (opts.images||[])) parts.push({inline_data:{mime_type:b.type||"image/jpeg",data:await blobToB64(b)}});
+    parts.push({text:prompt});
     let r;
     try{
-      r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
-        headers:{"content-type":"application/json","x-api-key":apiKey(),"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-        body:JSON.stringify({model:modelName(),max_tokens:4000,messages:[{role:"user",content}]})});
+      r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelName())}:generateContent`,{method:"POST",
+        headers:{"content-type":"application/json","x-goog-api-key":apiKey()},
+        body:JSON.stringify({contents:[{role:"user",parts}],generationConfig:{responseMimeType:"application/json",maxOutputTokens:8000}})});
     }catch(e){throw {code:"network"};}
-    if(r.status===401||r.status===403) throw {code:"bad_key"};
     if(r.status===429) throw {code:"rate_limited"};
     if(r.status===404) throw {code:"bad_model"};
-    if(!r.ok) throw {code:"api_error"};
+    if(r.status===401||r.status===403) throw {code:"bad_key"};
+    if(!r.ok){
+      const d=await r.json().catch(()=>null), m=JSON.stringify(d||"");
+      throw {code:/API_KEY_INVALID|API key not valid/.test(m)?"bad_key":"api_error"};
+    }
     const d=await r.json();
-    const text=(d.content||[]).map(x=>x.type==="text"?x.text:"").join("").replace(/```json|```/g,"");
+    const text=(((d.candidates||[])[0]||{}).content||{parts:[]}).parts.map(x=>x.text||"").join("").replace(/```json|```/g,"");
     const s=text.indexOf("{"), e=text.lastIndexOf("}");
     if(s<0||e<0) throw {code:"api_error"};
     return JSON.parse(text.slice(s,e+1));
   }
 };
-const ERR={no_key:"Add your Anthropic API key under Rules and scores to use this.",bad_key:"The API key was rejected. Check it under Rules and scores.",bad_model:"That model name wasn’t found. Check it under Rules and scores.",network:"Couldn’t reach Claude. Check your connection.",api_error:"Claude returned an error. Try again."};
+const ERR={no_key:"Add your Gemini API key under Rules and scores to use this.",bad_key:"The API key was rejected. Check it under Rules and scores.",bad_model:"That model name wasn’t found. Check it under Rules and scores.",network:"Couldn’t reach Gemini. Check your connection.",api_error:"Gemini returned an error. Try again."};
 function updateAiUi(){
   const photo=document.getElementById("photoBtn");
-  if(!inClaude){sampleFn=apiKey()?directClaude:null;document.getElementById("connBox").classList.remove("hidden");}
+  if(!inClaude){sampleFn=apiKey()?directGemini:null;document.getElementById("connBox").classList.remove("hidden");}
   photo.classList.toggle("hidden",!sampleFn);
-  if(!sampleFn) flash("Add your Anthropic API key under Rules and scores to read photos. You can still tap your tiles in below.");
+  if(!sampleFn) flash("Add your Gemini API key under Rules and scores to read photos. You can still tap your tiles in below.");
 }
 (async()=>{
   try{if(window.claude&&window.claude.use){sampleFn=await window.claude.use("sample");inClaude=!!sampleFn;}}catch(e){sampleFn=null;}
@@ -960,7 +963,7 @@ function analogShell(){
     <div class="row" style="margin-top:8px"><button class="btn" id="analogBtn" type="button">Get an analog read</button></div>
     <div class="status" id="analogStatus"></div></div>`;
   const b=an.querySelector("#analogBtn");b.addEventListener("click",runAnalog);
-  if(!sampleFn){b.disabled=true;an.querySelector("#analogStatus").textContent="Add your Anthropic API key under Rules and scores to turn on analog reads.";}
+  if(!sampleFn){b.disabled=true;an.querySelector("#analogStatus").textContent="Add your Gemini API key under Rules and scores to turn on analog reads.";}
   return an;
 }
 function stateText(){
