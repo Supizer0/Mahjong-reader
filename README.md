@@ -2,7 +2,7 @@
 
 A riichi mahjong discard helper. Take a photo of the table (or tap the tiles in) and Kawa shows the most efficient discard, the safest discard, a digital pick, and an analog read based on strategy books.
 
-Everything lives in one file: `www/index.html`. The tile engine (shanten, acceptance, lookahead, deal-in rates, push/fold) runs on the phone with no internet. Photo reading and the analog read call Claude, which needs your own Anthropic API key.
+Everything lives in one file: `www/index.html`. The tile engine (shanten, acceptance, lookahead, deal-in rates, push/fold) runs on the phone with no internet. Photo reading and the analog read call Google's Gemini API, which needs your own Gemini API key.
 
 ## Get the Android app
 
@@ -17,9 +17,9 @@ Everything lives in one file: `www/index.html`. The tile engine (shanten, accept
 2. The **Publish web app** workflow puts the app at `https://<your-user>.github.io/<repo>/`.
 3. Open that link in Chrome on your phone and choose **Add to Home screen**. The camera works from the browser too.
 
-## Connect Claude
+## Connect Gemini
 
-Open **Rules and scores** in the app, paste an Anthropic API key (from console.anthropic.com), and tap **Save**. The key is stored only on that device, never in the repository. Calls are billed to your API account; the model defaults to `claude-sonnet-5-5` and can be changed in the same box.
+Open **Rules and scores** in the app, paste a Gemini API key (from Google AI Studio, aistudio.google.com/apikey), and tap **Save**. The key is stored only on that device, never in the repository. Calls are billed to your Google AI account; the model defaults to `gemini-flash-latest` and can be changed in the same box (for example to `gemini-pro-latest` for harder photos).
 
 Never commit an API key to GitHub.
 
