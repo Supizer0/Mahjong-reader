@@ -155,8 +155,11 @@ summary{cursor:pointer;font-weight:700}
     <h2 id="cap-h">Read the table</h2>
     <div class="panel">
       <div class="row">
-        <label class="btn" id="photoBtn" tabindex="0" role="button">Take or choose a photo
+        <label class="btn" id="photoBtn" tabindex="0" role="button">Take a photo
           <input id="photo" type="file" accept="image/*" capture="environment" class="hidden">
+        </label>
+        <label class="btn" id="pickBtn" tabindex="0" role="button">Choose a photo
+          <input id="photoPick" type="file" accept="image/*" class="hidden">
         </label>
         <button class="btn ghost" id="exampleBtn" type="button">Load an example</button>
         <button class="btn ghost" id="clearBtn" type="button">Clear</button>
@@ -934,6 +937,7 @@ function updateAiUi(){
   const photo=document.getElementById("photoBtn");
   if(!inClaude){sampleFn=apiKey()?directGemini:null;document.getElementById("connBox").classList.remove("hidden");}
   photo.classList.toggle("hidden",!sampleFn);
+  document.getElementById("pickBtn").classList.toggle("hidden",!sampleFn);
   if(!sampleFn) flash("Add your Gemini API key under Rules and scores to read photos. You can still tap your tiles in below.");
 }
 (async()=>{
@@ -1034,7 +1038,7 @@ Shimocha is the player to my right, toimen across, kamicha to my left. List disc
 Only include tiles you can actually see; never invent tiles to fill a hand. Include my drawn tile in "hand". If scores are shown, read them.
 Return ONLY JSON:
 {"hand":[],"my_calls":[],"my_discards":[],"dora_indicators":[],"shimocha":{"discards":[],"riichi_index":null,"calls":[]},"toimen":{"discards":[],"riichi_index":null,"calls":[]},"kamicha":{"discards":[],"riichi_index":null,"calls":[]},"round_wind":"E","seat_wind":"E","scores":{"me":null,"shimocha":null,"toimen":null,"kamicha":null},"confidence":"low|medium|high","notes":"short note on anything unclear"}`;
-document.getElementById("photo").addEventListener("change",async e=>{
+async function readPhoto(e){
   const f=e.target.files&&e.target.files[0];e.target.value="";if(!f||!sampleFn)return;
   const st=document.getElementById("photoStatus");st.classList.remove("err");
   st.textContent="Reading the tiles… this can take up to a minute.";
@@ -1061,8 +1065,10 @@ document.getElementById("photo").addEventListener("change",async e=>{
       err&&err.code==="images_unavailable"?"Sending images to Claude isn’t available here. You can still tap your tiles in.":
       err&&ERR[err.code]?ERR[err.code]:err&&err.code==="rate_limited"?"Too many requests right now. Try again in a minute.":"The photo couldn’t be read. Try a sharper, straight-on shot or tap the tiles in.";
   }
-});
-document.getElementById("photoBtn").addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();document.getElementById("photo").click();}});
+}
+document.getElementById("photo").addEventListener("change",readPhoto);
+document.getElementById("photoPick").addEventListener("change",readPhoto);
+[["photoBtn","photo"],["pickBtn","photoPick"]].forEach(([b,i])=>document.getElementById(b).addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();document.getElementById(i).click();}}));
 
 /* ================= example & clear ================= */
 document.getElementById("exampleBtn").addEventListener("click",()=>{
