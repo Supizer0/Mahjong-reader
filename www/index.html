@@ -55,6 +55,10 @@ button{font:inherit;color:inherit}
 .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 .status{font-size:.92rem;color:var(--muted);margin-top:10px;white-space:pre-wrap}
 .status.err{color:var(--danger)}
+.shots{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin-bottom:10px}
+.shot{display:flex;gap:10px;align-items:flex-start;border:1px dashed var(--line);border-radius:12px;padding:10px}
+.shot .btn{padding:8px 14px}
+.shot img{width:64px;height:64px;object-fit:cover;border-radius:8px;flex:none}
 
 /* tiles */
 .tiles{display:flex;flex-wrap:wrap;gap:3px;align-items:flex-end;min-height:44px}
@@ -154,13 +158,34 @@ summary{cursor:pointer;font-weight:700}
   <section aria-labelledby="cap-h">
     <h2 id="cap-h">Read the table</h2>
     <div class="panel">
+      <div id="photoArea">
+        <div class="shots">
+          <div class="shot" data-slot="hand">
+            <img alt="Hand photo" class="hidden">
+            <div>
+              <b>Your hand</b><div class="small">Your tiles, calls and drawn tile</div>
+              <div class="row" style="margin-top:6px">
+                <label class="btn ghost" tabindex="0" role="button">Take<input type="file" accept="image/*" capture="environment" class="hidden"></label>
+                <label class="btn ghost" tabindex="0" role="button">Choose<input type="file" accept="image/*" class="hidden"></label>
+                <button class="btn ghost hidden" type="button" data-remove aria-label="Remove photo">✕</button>
+              </div>
+            </div>
+          </div>
+          <div class="shot" data-slot="kawa">
+            <img alt="Kawa photo" class="hidden">
+            <div>
+              <b>The kawa</b><div class="small">Discard ponds, calls, dora and scores</div>
+              <div class="row" style="margin-top:6px">
+                <label class="btn ghost" tabindex="0" role="button">Take<input type="file" accept="image/*" capture="environment" class="hidden"></label>
+                <label class="btn ghost" tabindex="0" role="button">Choose<input type="file" accept="image/*" class="hidden"></label>
+                <button class="btn ghost hidden" type="button" data-remove aria-label="Remove photo">✕</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
       <div class="row">
-        <label class="btn" id="photoBtn" tabindex="0" role="button">Take a photo
-          <input id="photo" type="file" accept="image/*" capture="environment" class="hidden">
-        </label>
-        <label class="btn" id="pickBtn" tabindex="0" role="button">Choose a photo
-          <input id="photoPick" type="file" accept="image/*" class="hidden">
-        </label>
+        <button class="btn" id="readBtn" type="button" disabled>Read the photos</button>
         <button class="btn ghost" id="exampleBtn" type="button">Load an example</button>
         <button class="btn ghost" id="clearBtn" type="button">Clear</button>
       </div>
@@ -938,10 +963,10 @@ const directGemini={
 const ERR={no_key:"Add your Gemini API key under Rules and scores to use this.",bad_key:"The API key was rejected. Check it under Rules and scores.",bad_model:"That model name wasn’t found. Check it under Rules and scores.",network:"Couldn’t reach Gemini. Check your connection.",api_error:"Gemini returned an error. Try again."};
 const errText=(e,fallback)=>(e&&ERR[e.code]?ERR[e.code]:fallback)+(e&&e.detail?" ("+e.detail+")":"");
 function updateAiUi(){
-  const photo=document.getElementById("photoBtn");
+  const photo=document.getElementById("photoArea");
   if(!inClaude){sampleFn=apiKey()?directGemini:null;document.getElementById("connBox").classList.remove("hidden");}
   photo.classList.toggle("hidden",!sampleFn);
-  document.getElementById("pickBtn").classList.toggle("hidden",!sampleFn);
+  document.getElementById("readBtn").classList.toggle("hidden",!sampleFn);
   if(!sampleFn) flash("Add your Gemini API key under Rules and scores to read photos. You can still tap your tiles in below.");
 }
 (async()=>{
@@ -1036,21 +1061,47 @@ async function shrink(file){
   cv.getContext("2d").drawImage(img,0,0,cv.width,cv.height);
   return await new Promise(r=>cv.toBlob(r,"image/jpeg",0.88));
 }
-const VISION_PROMPT=()=>`Read this photo or screenshot of a Japanese riichi mahjong table. "Me" is the player whose hand faces the camera (bottom of a screenshot).
+const IMAGE_GUIDE={
+  both:`You get two images of the same moment. Image 1 is a close-up of my hand. Image 2 shows the table with the discard ponds (kawa). Read "hand" and "my_calls" from image 1; if image 2 also shows my hand, use it only to check image 1. Read everything else (discards, riichi tiles, opponents' calls, dora indicators, winds, scores) from image 2. Never count a tile twice because it shows in both images.`,
+  hand:`This image is a close-up of my hand. Read "hand" and "my_calls"; fill in other fields only if they are clearly visible.`,
+  kawa:`This image shows the table with the discard ponds (kawa). My hand may not be visible: leave "hand" empty unless you can read it.`
+};
+const VISION_PROMPT=which=>`Read this mahjong table. ${IMAGE_GUIDE[which]}
+It is a Japanese riichi mahjong game, shown in a photo or screenshot. "Me" is the player whose hand faces the camera (bottom of a screenshot).
 Tile codes: number + suit letter. m = characters/manzu (Chinese numerals 一 to 九 above 萬), p = circles/pinzu, s = bamboo/souzu (1s is usually a bird). ${state.aka?"Red fives are 0m, 0p, 0s.":"This game has no red fives: write every five as 5m, 5p or 5s."} Honors: 1z East 東, 2z South 南, 3z West 西, 4z North 北, 5z White (blank or blue frame), 6z Green 發, 7z Red 中.
 Shimocha is the player to my right, toimen across, kamicha to my left. List discards in the order played (each pond reads left to right, row by row, from that player's own point of view). riichi_index is the 0-based index of the sideways tile in that pond, or null. "calls" are the tiles in that player's open melds (pon, chii, kan), all tiles listed.
 Only include tiles you can actually see; never invent tiles to fill a hand. Include my drawn tile in "hand". If scores are shown, read them.
 Return ONLY JSON:
 {"hand":[],"my_calls":[],"my_discards":[],"dora_indicators":[],"shimocha":{"discards":[],"riichi_index":null,"calls":[]},"toimen":{"discards":[],"riichi_index":null,"calls":[]},"kamicha":{"discards":[],"riichi_index":null,"calls":[]},"round_wind":"E","seat_wind":"E","scores":{"me":null,"shimocha":null,"toimen":null,"kamicha":null},"confidence":"low|medium|high","notes":"short note on anything unclear"}`;
-async function readPhoto(e){
-  const f=e.target.files&&e.target.files[0];e.target.value="";if(!f||!sampleFn)return;
+const shots={hand:null,kawa:null};
+function showShot(slot){
+  const el=document.querySelector(`.shot[data-slot="${slot}"]`),img=el.querySelector("img"),b=shots[slot];
+  if(img.src)URL.revokeObjectURL(img.src);
+  if(b)img.src=URL.createObjectURL(b);else img.removeAttribute("src");
+  img.classList.toggle("hidden",!b);el.querySelector("[data-remove]").classList.toggle("hidden",!b);
+  document.getElementById("readBtn").disabled=!shots.hand&&!shots.kawa;
+}
+document.querySelectorAll(".shot").forEach(el=>{
+  const slot=el.dataset.slot;
+  el.querySelectorAll("input[type=file]").forEach(inp=>inp.addEventListener("change",async()=>{
+    const f=inp.files&&inp.files[0];inp.value="";if(!f)return;
+    try{shots[slot]=await shrink(f);}catch(e){flash("That image couldn’t be opened. Try another one.");return;}
+    showShot(slot);
+  }));
+  el.querySelector("[data-remove]").addEventListener("click",()=>{shots[slot]=null;showShot(slot);});
+});
+function clearShots(){shots.hand=shots.kawa=null;showShot("hand");showShot("kawa");}
+async function readPhotos(){
+  const which=shots.hand&&shots.kawa?"both":shots.hand?"hand":"kawa";
+  const images=[shots.hand,shots.kawa].filter(Boolean);
+  if(!images.length||!sampleFn)return;
+  const btn=document.getElementById("readBtn");btn.disabled=true;
   const st=document.getElementById("photoStatus");st.classList.remove("err");
   st.textContent="Reading the tiles… this can take up to a minute.";
   try{
     const lim=await sampleFn.limits().catch(()=>null);
-    if(lim&&!lim.images)throw {code:"images_unavailable"};
-    const blob=await shrink(f);
-    const out=await sampleFn.json(VISION_PROMPT(),{images:[blob],modelTier:"complex"});
+    if(lim&&(!lim.images||(lim.images.maxCount||1)<images.length))throw {code:"images_unavailable"};
+    const out=await sampleFn.json(VISION_PROMPT(which),{images,modelTier:"complex"});
     const s=blank(state);const used=Array(34).fill(0);const reds={};let dropped=0;
     const put=(arr,list)=>{(list||[]).forEach(cd=>{const p=parseCode(cd);if(!p){dropped++;return;}
       if(used[p.t]>=4){dropped++;return;}
@@ -1062,17 +1113,16 @@ async function readPhoto(e){
     const w={E:0,S:1,W:2,N:3};s.round=Math.min(1,w[out.round_wind]??0);s.seat=w[out.seat_wind]??0;
     const scs=out.scores||{};s.scores=[scs.me,scs.shimocha,scs.toimen,scs.kamicha].map(v=>Number.isFinite(+v)&&v!==null&&v!==""?String(v):"");
     state=s;changed();
-    st.textContent=`Read with ${out.confidence||"unknown"} confidence. ${out.notes?out.notes+" ":""}${dropped?dropped+" unreadable tile(s) were skipped. ":""}Check every row against the photo before trusting the advice.`;
+    st.textContent=`Read with ${out.confidence||"unknown"} confidence. ${out.notes?out.notes+" ":""}${dropped?dropped+" unreadable tile(s) were skipped. ":""}Check every row against the photos before trusting the advice.`;
   }catch(err){
     st.classList.add("err");
     st.textContent=err&&err.code==="not_granted"?"Claude access wasn’t allowed, so photos can’t be read. You can still tap your tiles in.":
       err&&err.code==="images_unavailable"?"Sending images to Claude isn’t available here. You can still tap your tiles in.":
-      err&&err.code==="rate_limited"?errText({...err,code:""},"Too many requests right now. Try again in a minute."):errText(err,"The photo couldn’t be read. Try a sharper, straight-on shot or tap the tiles in.");
-  }
+      err&&err.code==="rate_limited"?errText({...err,code:""},"Too many requests right now. Try again in a minute."):errText(err,"The photos couldn’t be read. Try sharper, straight-on shots or tap the tiles in.");
+  }finally{btn.disabled=!shots.hand&&!shots.kawa;}
 }
-document.getElementById("photo").addEventListener("change",readPhoto);
-document.getElementById("photoPick").addEventListener("change",readPhoto);
-[["photoBtn","photo"],["pickBtn","photoPick"]].forEach(([b,i])=>document.getElementById(b).addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();document.getElementById(i).click();}}));
+document.getElementById("readBtn").addEventListener("click",readPhotos);
+document.querySelectorAll('label[role="button"]').forEach(l=>l.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();l.querySelector("input").click();}}));
 
 /* ================= example & clear ================= */
 document.getElementById("exampleBtn").addEventListener("click",()=>{
@@ -1086,7 +1136,7 @@ document.getElementById("exampleBtn").addEventListener("click",()=>{
   s.seat=1;s.round=0;s.scores=["25000","24000","26000","25000"];state=s;changed();
   flash("Example loaded: South seat, East round. Shimocha just declared riichi and kamicha has a green dragon pon.");
 });
-document.getElementById("clearBtn").addEventListener("click",()=>{state=blank(state);changed();flash("Cleared. Take a photo or tap your tiles in.");});
+document.getElementById("clearBtn").addEventListener("click",()=>{state=blank(state);clearShots();changed();flash("Cleared. Take a photo or tap your tiles in.");});
 
 renderPalette();renderZones();renderSettings();analyze();
 if("serviceWorker" in navigator&&location.protocol==="https:"&&!window.claude){navigator.serviceWorker.register("sw.js").catch(()=>{});}
