@@ -1,6 +1,6 @@
 # Kawa
 
-A riichi mahjong discard helper. Take a photo of the table (or tap the tiles in) and Kawa shows the most efficient discard, the safest discard, a digital pick, and an analog read based on strategy books.
+A riichi mahjong discard helper. Take a photo of the table, or one of your hand and one of the kawa (or tap the tiles in), and Kawa shows the most efficient discard, the safest discard, a digital pick, and an analog read based on strategy books.
 
 Everything lives in one file: `www/index.html`. The tile engine (shanten, acceptance, lookahead, deal-in rates, push/fold) runs on the phone with no internet. Photo reading and the analog read call Google's Gemini API, which needs your own Gemini API key.
 
